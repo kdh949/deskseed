@@ -6,9 +6,9 @@ Accepted
 
 ## Context
 
-ADR 0039 intentionally reduced the frontend to one visual root while deferred surfaces were being recomposed. Customer authentication, anonymous and authenticated request handling, attachments, and public Knowledge Base contracts are now implementation-ready, and customer routes have already returned to the runtime. Keeping those routes under the Agent Workspace theme, global CSS, Storybook, and build graph makes it possible for a later change to import staff layout or tokens into a customer screen by accident.
+ADR 0039 temporarily used a single frontend root while customer-facing pages were being rebuilt. Customer authentication, requests, attachments and public Knowledge Base contracts are ready for implementation, and customer routes are active again. Sharing the Agent Workspace theme, global CSS, Storybook and build graph makes it easier to pull staff layouts or tokens into customer pages accidentally.
 
-The customer portal also has a different interaction density and responsive requirement. It must remain a public help-center experience while the staff console remains a high-density operational workspace. A CSS scope inside one bundle is not a sufficient ownership boundary.
+Customers need a responsive help-center UI; staff use a denser console. Separate application bundles keep their styles and components independent.
 
 ## Decision
 

@@ -1,4 +1,4 @@
-# ADR 0042 — Password-primary customer authentication with passwordless magic-link onboarding
+# ADR 0042 — 고객 비밀번호 로그인과 매직 링크
 
 ## Status
 
@@ -6,76 +6,50 @@ Accepted — 2026-08-25
 
 ## Context
 
-ADR 0029은 고객 인증의 첫 방식을 email magic link로 정했다. 현재 제품 요구사항은 일반 고객에게
-password registration, email verification, login, reset을 제공하면서도 기존 익명·passwordless 고객의
-magic-link 접근을 유지해야 한다. 단순히 두 방식을 모두 허용하면 password 계정이 magic link로 비밀번호
-검증을 우회하거나, 피해자 이메일로 미리 만든 registration intent가 이메일 링크만으로 활성화되는 경로가
-생긴다.
+ADR 0029에서는 이메일 매직 링크를 고객 로그인 방식으로 정했습니다. 이번 변경에서는 신규 고객에게 비밀번호 회원가입·이메일 인증·로그인·재설정을 제공하고, 기존 passwordless 고객은 매직 링크로 로그인할 수 있게 합니다.
 
-고객 인증은 직원 BCrypt/bootstrap 인증과 독립적인 bounded context다. 기존 익명 문의의 소유권 역시
-이메일 일치가 아니라 ticket-specific access token 또는 signed claim grant로만 이전해야 한다.
+비밀번호 계정에도 매직 링크 로그인을 허용하면 비밀번호 인증을 건너뛸 수 있습니다. 다른 사람의 이메일로 가입을 미리 시작한 뒤 이메일 링크만으로 공격자가 정한 비밀번호를 활성화할 위험도 있습니다. 가입을 시작한 브라우저의 정보까지 함께 사용해 처리합니다.
+
+고객 인증은 직원의 BCrypt/bootstrap 인증과 별도 bounded context로 관리합니다. 기존 익명 문의를 고객 계정에 연결할 때는 문의별 접근 토큰 또는 서명된 claim 증명을 요구합니다.
 
 ## Decision
 
-- 고객 계정의 기본 인증 방식은 password-primary다. 신규 password 계정은 registration request,
-  email verification, password login 순서로 활성화한다.
-- email verification은 등록을 승인하는 증명이며 일반 로그인 수단이 아니다. Pending registration은
-  email token과 같은 intent의 browser-bound continuation secret가 모두 일치할 때만 활성화한다.
-- magic-link login은 password credential이 없는 `ACTIVE_PASSWORDLESS` identity에만 발급한다.
-  Password 계정에는 externally identical `202`를 반환하되 login mail을 만들지 않는다.
-- passwordless session은 명시적인 registration completion에서 password, display name, company name,
-  현재 registration consent versions를 제출해야 `ACTIVE_PASSWORD`로 전환된다. 이 전환은 기존 익명
-  티켓을 이메일로 claim하지 않는다.
-- registration verification, magic login, password reset token은 purpose-bound, digest-only,
-  single-use, expiring token이다. 다른 purpose의 consumer는 token을 거부한다.
-- 고객 password는 직원용 encoder와 분리된 adaptive one-way encoder로 저장한다. 초기 목표는 Argon2id
-  19 MiB, iteration 2, parallelism 1이며 지원 배포 환경에서 시간을 측정한 뒤 work factor를 동결한다.
-  평문은 HTTP/application 경계 밖으로 나가지 않고 log, audit, response, cache, database에 남지 않는다.
-- password request는 12–128 characters를 허용하고 Unicode와 space를 허용하며 control character를
-  거부한다. Composition rule은 강제하지 않는다.
-- registration, password reset request, magic-link request는 account existence나 credential state를
-  드러내지 않는 generic response와 comparable work class를 사용한다. Password login은 unknown email,
-  wrong password, disabled, passwordless, incomplete registration에 같은 invalid-credential problem을 쓴다.
-- 모든 인증 request operation은 normalized destination과 requester network identity에 대한
-  PostgreSQL-backed throttling을 적용하고 제한 시 `429`와 `Retry-After`를 반환한다.
-- login/consume/completion은 현재 customer session을 rotate하고, password reset은 credential version을
-  올린 뒤 모든 기존 customer session을 revoke한다. Cookie/CSRF 경계는 기존 HttpOnly,
-  Secure-in-production, SameSite=Lax server session을 유지한다.
-- credential, token, session, consent mutation과 required security audit는 같은 transaction에서
-  commit/rollback한다. Email network I/O는 durable outbound intent commit 뒤에 실행한다.
-- matching email alone은 anonymous ticket ownership, listing, claim을 절대 부여하지 않는다. ADR 0029의
-  ticket-specific explicit claim proof 계약은 변경하지 않는다.
+- 신규 고객은 이메일 인증을 마친 뒤 비밀번호로 로그인합니다.
+- 이메일 인증은 가입을 완료할 때 사용합니다. `Pending registration`을 활성화하려면 같은 `registration intent`의 이메일 토큰과 가입을 시작한 브라우저의 `continuation secret`이 모두 일치해야 합니다.
+- 매직 링크는 비밀번호가 없는 `ACTIVE_PASSWORDLESS` 계정에만 발급합니다. 비밀번호 계정이 매직 링크를 요청해도 응답은 동일하게 `202`로 보내고 이메일은 발송하지 않습니다.
+- passwordless 계정이 `ACTIVE_PASSWORD`로 바뀔 때는 가입 완료 화면에서 비밀번호·표시 이름·회사 이름·현재 동의 약관 버전을 제출해야 합니다. 기존 익명 문의는 문의별 claim 증명으로 연결합니다.
+- 이메일 인증·매직 링크·비밀번호 재설정 토큰에는 목적, 해시 저장, 일회성 사용, 만료 시간을 적용합니다. 토큰을 발급한 용도와 실제 사용 목적이 다르면 거부합니다.
+- 고객 비밀번호는 직원 인증과 별도의 adaptive one-way encoder로 저장합니다. Argon2id 초기 목표는 메모리 19 MiB, iteration 2, parallelism 1입니다. 배포 환경에서 처리시간을 측정한 뒤 work factor를 정합니다. 비밀번호 평문은 로그·감사 기록·응답·캐시·DB에 저장하지 않습니다.
+- 비밀번호는 12~128자로 제한합니다. Unicode와 공백은 허용하고 제어 문자는 차단합니다. 대문자·숫자·특수문자를 섞도록 강제하는 조합 규칙은 사용하지 않습니다.
+- 회원가입·비밀번호 재설정·매직 링크 요청은 계정 존재 여부가 드러나지 않도록 동일한 유형의 응답과 유사한 처리 비용을 사용합니다. 로그인 실패도 이메일 미등록, 잘못된 비밀번호, 비활성·passwordless 계정, 미완료 가입 모두 같은 invalid-credential 응답을 사용합니다.
+- 인증 요청에는 정규화한 수신지와 요청자 네트워크 정보를 이용한 PostgreSQL 기반 throttling을 적용합니다. 제한을 넘기면 `429`와 `Retry-After`를 반환합니다.
+- 로그인·토큰 사용·가입 완료 시 고객 세션을 새로 발급합니다. 비밀번호를 재설정하면 credential version을 올리고 기존 고객 세션을 모두 무효화합니다. 세션 쿠키는 HttpOnly, 운영 환경 Secure, SameSite=Lax로 설정하고 CSRF 보호를 적용합니다.
+- 인증 정보·토큰·세션·동의 내역·감사 기록은 같은 트랜잭션에 저장합니다. 이메일 발송 요청은 DB에 먼저 저장한 뒤 전송합니다.
+- 익명 문의를 계정에 연결할 때는 문의별 접근 토큰 또는 서명된 claim 증명을 요구합니다.
 
-이 결정은 ADR 0029의 authentication-method와 password-reset deferral 부분만 supersede한다. ADR 0029의
-single-use token, enumeration safety, session security, explicit claim, durable outbound-mail 경계는 유지한다.
+이번 ADR은 ADR 0029의 고객 인증 방식과 비밀번호 재설정 연기 결정을 변경합니다. ADR 0029에 정의한 일회용 토큰, 계정 존재 여부 보호, 세션 보안, 문의별 claim 증명, 이메일 발송 기록은 그대로 적용합니다.
 
 ## Browser completion actor consistency
 
-가입 완료 화면은 표시된 customer ID를 `X-Deskseed-Expected-Customer-Id`로 전송한다. 서버는 이 ID로 대상을 선택하지 않고 현재 인증 principal과 비교해 저장 전에 불일치를 거부한다. 기존 클라이언트 호환을 위해 header는 optional이며 현재 Customer Portal은 항상 전송한다. 기존 CSRF 검사, rate limit, required denied audit와 409 등록 충돌 계약을 재사용하고 새 세션 방식이나 DB 구조를 추가하지 않는다.
+가입 완료 화면은 표시 중인 customer ID를 `X-Deskseed-Expected-Customer-Id` 헤더로 전송합니다. 서버는 현재 로그인한 고객 ID와 헤더 값을 비교해, 서로 다르면 저장을 거부합니다. 실제 작업할 계정은 서버 세션에서 결정합니다.
+
+이 헤더는 이전 클라이언트와의 호환을 위해 선택 항목으로 두고, 현재 Customer Portal에서는 항상 전송합니다. CSRF·rate limit·필수 감사 기록과 가입 충돌 `409` 처리는 기존 방식을 사용합니다. 세션 방식과 DB 구조도 그대로 유지합니다.
 
 ## Alternatives
 
-- 모든 계정에 magic link와 password를 함께 허용: password credential 우회 경로가 되고 계정 상태별
-  보안 의미가 불명확해져 거부한다.
-- email token만으로 pending registration 활성화: 다른 browser가 피해자 이메일로 선택한 password를
-  설정할 수 있어 continuation proof를 함께 요구한다.
-- verified email equality로 anonymous ticket 자동 claim: email ownership과 ticket ownership proof가
-  다르므로 거부한다.
-- 직원 BCrypt bean 재사용: 고객 credential의 parameter tuning과 migration을 직원 bootstrap 정책에서
-  분리할 수 없어 거부한다.
-- 외부 IdP/OIDC 우선 도입: 현재 self-hosted P0 요구사항보다 운영·secret·redirect 경계가 넓어 연기한다.
+- **모든 계정에 비밀번호와 매직 링크를 함께 허용:** 비밀번호 계정이 매직 링크로 로그인할 수 있어 제외했습니다.
+- **이메일 토큰만으로 대기 중 가입 활성화:** 공격자가 다른 사람의 이메일로 가입 요청을 시작해 비밀번호를 등록할 수 있습니다. 브라우저별 `continuation secret`을 추가했습니다.
+- **이메일 주소가 같으면 익명 문의 자동 연결:** 이메일 소유와 문의 접근 권한은 별도로 다룹니다. 문의별 접근 증명을 사용합니다.
+- **직원용 BCrypt encoder 재사용:** 고객의 해시 설정·변경 작업을 직원용 bootstrap 인증에서 분리하기 위해 별도 encoder를 사용합니다.
+- **외부 IdP/OIDC 우선 도입:** 초기 self-hosted 요구사항에 맞춰 고객 자체 인증을 먼저 구현하고, 외부 IdP 연동은 뒤로 미뤘습니다.
 
 ## Consequences
 
-- `customerauth`는 password credential, registration intent, purpose-bound token, limiter, session,
-  security audit를 소유한다. `customer`는 verified profile을 소유하고 consent는 별도 bounded module이
-  소유한다.
-- OpenAPI는 identity 상태와 generic failure를 명시하고 usable password/token/cookie 예시를 포함하지
-  않아야 한다.
-- Argon2id work factor는 지원 hardware에서 검증 시간을 측정하고, dummy hash path와 strict throttling으로
-  unknown-account timing과 authentication DoS를 함께 검증해야 한다.
-- 기존 passwordless account와 claim flow는 호환되지만 magic-link request의 eligibility가 좁아진다.
-- 적용 migration은 forward-only이며 기존 staff password hash나 customer claim proof를 rewrite하지 않는다.
+- `customerauth`가 비밀번호, 가입 요청, 용도별 토큰, 요청 제한, 세션과 보안 감사 기록을 관리합니다. 고객 프로필은 `customer`, 동의 정보는 별도 consent 모듈이 관리합니다.
+- OpenAPI에 계정 상태와 오류 응답을 명시합니다. 예시에는 실제 사용 가능한 비밀번호·토큰·쿠키를 넣지 않습니다.
+- Argon2id 처리시간은 지원 하드웨어에서 측정합니다. 없는 계정의 dummy hash 경로와 요청 제한도 함께 테스트해 응답시간 차이와 인증 요청 DoS를 다룹니다.
+- 기존 passwordless 계정과 문의 claim 방식은 유지하고, 매직 링크 발급 대상은 비밀번호가 없는 계정으로 제한합니다.
+- DB migration은 forward-only로 적용합니다. 직원 비밀번호 해시와 기존 문의 claim 증명은 변경하지 않습니다.
 
 ## References
 

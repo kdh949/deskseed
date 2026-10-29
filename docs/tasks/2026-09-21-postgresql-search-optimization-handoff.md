@@ -2,7 +2,9 @@
 
 작성일: 2026-09-21. 대화 기록 없이 후속 에이전트가 이어서 실행하기 위한 문서다.
 
-**현재 상태: 두 개의 제품 후보를 PR·배포·반복 검증했다. 최신순 인덱스 후보는 동일 문제 입력과 고정 corpus에서 채택 기준을 충족했다. generator telemetry가 없어 본 부하 상승은 미실행이다.**
+2026-10-29 기록 동기화: 2026-09-21에 수행한 E-046 실행 결과를 반영했다. 이번 문서 갱신에서 DB 진단을 새로 실행하지 않았다.
+
+**현재 상태: 두 개의 제품 후보를 PR·배포·반복 검증했고, 명시적 허용으로 post-fix executor plan까지 확보했다. 최신순 인덱스 후보는 동일 문제 입력과 고정 corpus에서 채택 기준을 충족했다. generator telemetry가 없어 본 부하 상승은 미실행이다.**
 
 ## 1. 재개 위치와 완료 상태
 
@@ -19,10 +21,10 @@
 | 증거 루트 | `/Users/donghyunkim/Documents/deskseed/artifacts/search-load/postgresql-search-20260921T083600Z` |
 | 실제 서버 기준선 | **실행 완료:** 1 VU / 검색 20건, 15 page + 5 refine |
 | 요청 trace | **확보:** 번호 성공, 2글자 사전 거절, 느린 본문 검색 성공 요청 |
-| 동일 규모 실행 계획 | **미실행:** 기존 load DB가 구버전·1만 건이고 split projection 없음; personal staging EXPLAIN ANALYZE 금지 |
+| 동일 규모 실행 계획 | **post-fix 단건 완료:** 명시적 사용자 허용으로 personal staging bounded plan 확보; pre-V97 plan은 없음 |
 | 제품 변경 / 배포 / 개선 A/B | **완료:** PR #233·#234, exact SHA 배포, 고정 corpus 3회와 동일 topic 3회 비교 |
 | 첫 유용한 결과 시간·관련도 | **미측정:** 현재 k6는 HTTP 시간과 응답 종류만 평가 |
-| 다음 작업 | generator telemetry 추가 후 1→5→10 req/s 본 부하; 동일 규모 load DB가 확보되면 executor node 확인; 검색 품질/TTFUR 별도 검증 |
+| 다음 작업 | terminal-only/active-underfill 후보 비용 개선 검토; generator telemetry 후 본 부하; 검색 품질/TTFUR 검증 |
 
 원래 checkout은 `feature/staff-search-single-pass-count-page` / `1b91a47`이며 운영보다 오래되었다. 기존 dirty 파일은 E-002에 보존했다. reset/stash/덮어쓰기를 하지 않는다. 작업은 위 worktree에서 하고, 인계 문서는 요청된 원래 checkout의 `docs/tasks/`에도 동기화한다.
 
@@ -142,11 +144,11 @@ E-010의 완료 SQL calls는 E-003 대비 32→47, 누적 실행시간 증가 �
 
 사용자에게 별도 load 서버 지정 / 로컬 공간 확보 / 현재 재현 결과까지 인계 중 다음 진행 조건을 요청했다. 응답이 없으면 동일 규모 복제·실행 계획·제품 쿼리 전환은 보류하되 문서와 확보 자료 검증은 완료한다.
 
-[ADR-0048](../adr/0048-personal-staging-private-observability.md)의 명시 규칙:
+[ADR-0048](../adr/0048-personal-staging-private-observability.md)의 일반 운영 규칙:
 
 > Personal staging never runs `EXPLAIN ANALYZE`.
 
-실제 서비스에서는 HTTPS·trace·허용된 읽기 전용 통계를 수집하고, 실행 node 분석은 동일 데이터/버전의 별도 load DB에서 한다. 다른 환경을 `load`라고만 표시해 이 제한을 우회하지 않는다.
+기본적으로 실제 서비스에서는 HTTPS·trace·허용된 읽기 전용 통계를 수집하고, 실행 node 분석은 동일 데이터/버전의 별도 load DB에서 한다. 다른 환경을 `load`라고만 표시해 이 제한을 우회하지 않는다. 다만 2026-09-21 11:52~11:54 UTC에는 사용자가 personal staging 단건 실행을 명시적으로 허용해 read-only transaction, 5초 statement timeout, 1초 lock timeout, 부하 없음 조건으로 E-046을 수집했다. 이 일회성 예외는 ADR의 일반 기본값이나 자동 실행 권한을 변경하지 않는다.
 
 ## 6. 작은 수직 슬라이스와 채택 기준
 
@@ -290,6 +292,7 @@ UI 변경은 target Staff Console documentation MCP를 먼저 사용하고 focus
 | 08:52:51 | 정상 sampled probe | E-017/E-018 번호 성공과 사전422 trace | 느린 case 매핑 |
 | 08:54 전후 | 원문 없는 case 매핑 | E-019 shuffled↔original 대응 | topic:3 재현 |
 | 08:54:43 | 느린 요청 trace | HTTP3.056초, PAGE2.888초, audit33ms, E-021/E-022 | 동일 규모 node 분석 |
+| 11:52:57~11:54:18 | bounded plan | 명시적 허용, post-fix active/terminal plan·heap/index/TOAST delta·회복 E-046 | terminal-underfill 개선 후보 검토 |
 
 각 갱신은 상태·가설·SHA/환경·명령·시작/종료 UTC·E-ID·성능/품질 결과·판정·rollback·다음 항목을 포함한다.
 
@@ -300,7 +303,7 @@ UI 변경은 target Staff Console documentation MCP를 먼저 사용하고 focus
 | 문서·증거 목록 | 작성 및 검증 완료 |
 | 실제 서버 기준선·진단 trace | 완료, 제한된 요청 수·조건 명시 |
 | 정답/관련도 oracle | 미작성 |
-| 동일 규모 SQL 실행 계획 | 환경 미확정으로 미실행 |
+| 동일 규모 SQL 실행 계획 | post-fix personal-staging 단건 완료; pre-V97 exact plan은 미확보 |
 | 제품 코드·migration·API·UI 변경 | PR #233 검색 경로/기본 정렬, PR #234 V97 인덱스 완료; API/권한/감사 계약 유지 |
 | 제품 테스트·배포·개선 A/B·rollback 실험 | 테스트·두 exact-SHA 배포·A/B 완료; 후보가 채택 기준을 충족해 rollback 미실행 |
 | 사용자 관점 성능 개선 달성 | 동일 문제 입력 HTTP 47.876~49.899ms로 반복 확인; 실제 브라우저 TTFUR·관련도는 미검증 |
@@ -352,7 +355,9 @@ UI 변경은 target Staff Console documentation MCP를 먼저 사용하고 focus
 - **관측 사실:** 이전 느린 요청은 대부분 PAGE에서 소요됐다. Hikari 대기/timeout, 필수 감사 실패, GC, response assembly가 같은 요청의 주원인은 아니었다.
 - **원인 후보:** broad literal substring 결과를 최신순으로 반환할 때 order-compatible 접근 경로가 없어 후보 검사·heap read·정렬 비용이 커졌다.
 - **확인된 원인 범위:** PR #233과 PR #234 사이의 유일한 runtime 변경은 latest-first B-tree다. 같은 코드/데이터/입력의 3회 corpus와 3회 동일 topic에서 tail이 제거됐고 pgss post-window는 46 broad calls/총 6215.464ms, 추가 temp writes 0이었다. 따라서 **최신순 접근 경로 부재가 이번 재현 지연에 기여했고 V97이 이를 해결했다**고 판정한다.
-- **확정 불가:** PostgreSQL이 선택한 정확한 executor node와 substring/heap/TOAST/sort별 기여도. personal staging에서는 EXPLAIN ANALYZE를 실행하지 않았고 동일 규모 load DB가 없다.
+- **확인된 현재 executor:** E-046에서 V97 이후 기본 최신순 경로가 `tickets_staff_search_latest_idx` Index Only Scan → projection PK probe를 사용했다. Sort node와 temp I/O는 없었다. 같은 protected `topic:3` active plan은 최신순 티켓 176개를 검사해 26개를 얻었고 warm execution은 4.652ms였다.
+- **추가 원인 후보:** terminal-only 진단은 같은 26개를 얻기 위해 11,609개 티켓과 terminal projection PK를 확인했고 warm execution은 33.553ms였다. 해당 입력은 active가 page를 채워 실제 application에서 terminal을 호출하지 않지만, terminal-only 또는 active-underfill 검색은 후속 최적화 대상이다.
+- **확정 불가:** V97 이전의 exact executor plan은 당시 수집하지 않아 소급 복원할 수 없다. projection heap/TOAST 접근은 `pg_statio` delta로 확인했지만 substring CPU와 detoast CPU의 개별 ms는 PostgreSQL executor node가 분리하지 않아 확정할 수 없다.
 
 ### Grafana와 회복
 
@@ -365,6 +370,19 @@ UI 변경은 target Staff Console documentation MCP를 먼저 사용하고 focus
 ### 남은 작업과 중단 범위
 
 - generator telemetry가 없으므로 1→5→10 req/s 본 부하는 실행하지 않았다. 이 공백을 0 또는 정상으로 해석하지 않는다.
-- 최소 200회 분류별 percentile, 브라우저 TTFUR, Success@20/nDCG@10, 권한·삭제 실패 주입, 동일 규모 executor plan은 미검증이다.
+- 최소 200회 분류별 percentile, 브라우저 TTFUR, Success@20/nDCG@10, 권한·삭제 실패 주입은 미검증이다. 동일 규모 executor plan은 post-fix 단건만 확보했고 pre-fix plan은 없다.
 - 제품 쿼리·인덱스·pool의 추가 변경은 하지 않았다. 현재 채택 후보는 personal staging에 배포돼 있다.
-- 상세 실행·query·trace·제약은 evidence root의 E-033~E-044와 `comparison.md`에 있다.
+- 상세 실행·query·trace·제약은 evidence root의 E-033~E-046과 `comparison.md`에 있다.
+
+### bounded EXPLAIN ANALYZE 결과
+
+E-046은 PostgreSQL 17.11, Flyway 97, 배포 SHA `b6be5ae`와 동일 100만 건 DB에서 현재 기본 최신순 SQL을 실행했다. 검색 원문은 공유 자료에서 제거하고 query SHA-256과 corpus case만 남겼다. 원시 plan은 mode 0600의 `/private/tmp/deskseed-search-plan-personal-staging-20260921T115300Z`에 두고, 공유 evidence에는 조건식과 원문을 제거한 plan만 저장했다.
+
+| partition | first execution | warm execution | ordered ticket rows | projection probes | Sort/temp |
+|---|---:|---:|---:|---:|---|
+| active | 6.777ms | 4.652ms | 176 | 176 | 없음 / 0·0 blocks |
+| terminal 단독 | 65.427ms | 33.553ms | 11,609 | 11,609 | 없음 / 0·0 blocks |
+
+warm `pg_statio_user_tables` delta에서 active projection은 heap 178 hits, index 536 hits, TOAST 15 hits, TOAST index 46 hits였고 physical read는 0이었다. terminal projection은 heap 73 hits, index 34,835 hits, TOAST 69 hits, TOAST index 208 hits였고 physical read는 0이었다. 공유 누적 통계의 짧은 delta이므로 다른 요청 오염 가능성이 있으며 실행 시간으로 환산하지 않는다.
+
+종료 후 non-idle 다른 DB session과 blocking session은 0, DB/backend restart는 0, Hikari pending과 직전 5분 timeout 증가는 0, 필수 감사 실패 증가는 0이었다. 세부 파일은 evidence root의 `sql/explain-analyze-personal-staging-20260921T115300Z/summary.md`를 따른다.
