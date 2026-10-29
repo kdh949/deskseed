@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-21
+- Verification record updated: 2026-10-29
 - Decision: D-071
 - Requirements: REQ-SRCH-001, REQ-PERF-001, REQ-PERF-002, REQ-OPS-002
 
@@ -19,8 +20,10 @@ also order matching canonical tickets by `(updated_at desc, ticket_number desc)`
 unfiltered index that can provide that order. Existing queue indexes have leading status/priority or
 ownership columns and cannot provide the unfiltered order directly.
 
-These observations establish a bounded query-path candidate. They do not reveal the executor node or
-prove that the planner will choose the new path; personal staging does not run `EXPLAIN ANALYZE`.
+At the initial decision stage, these observations established a bounded query-path candidate but did
+not reveal the executor nodes or prove that the planner would choose the new path. The general
+personal-staging policy excludes automatic `EXPLAIN ANALYZE`; the explicitly authorized, bounded
+post-deployment exception on 2026-09-21 is recorded under Follow-up verification below.
 
 ## Decision
 
@@ -52,3 +55,27 @@ prove that the planner will choose the new path; personal staging does not run `
   run IDs. k6 termination evidence remains separate from Grafana/Tempo/Prometheus and cumulative
   `pg_stat_statements` evidence.
 
+## Follow-up verification — 2026-09-21
+
+After V97 deployment, an explicitly authorized `EXPLAIN (ANALYZE, BUFFERS, WAL, SETTINGS, FORMAT JSON)`
+diagnostic ran on the same one-million-ticket personal-staging database at 11:52:57–11:54:18 UTC.
+The deployment was `b6be5ae34b54d442f933b660e88abb1d262a8dc0`, PostgreSQL 17.11, Flyway 97. The
+queries ran in read-only transactions with a five-second statement timeout, a one-second lock timeout,
+and no concurrent load test. This one-time exception does not change the general operating policy.
+
+- The post-deployment latest-first plan used `tickets_staff_search_latest_idx` through an Index Only
+  Scan, followed by primary-key probes into the active or terminal search projection. Neither plan
+  contained a Sort node or temporary block I/O.
+- For protected `topic:3`, the active query examined 176 ordered tickets and returned 26 rows; first
+  execution was 6.777 ms and the warm repeat was 4.652 ms.
+- The separately forced terminal-only diagnostic examined 11,609 ordered tickets and returned 26 rows;
+  first execution was 65.427 ms and the warm repeat was 33.553 ms. The application did not need the
+  terminal query for this input because the active query filled the page.
+- These SQL execution times are separate from the HTTP before/after measurements. The diagnostic
+  confirms the deployed index path and absence of a Sort node for this input; it does not establish
+  the exact pre-V97 executor plan, the earlier sort contribution, or a general latency percentile.
+
+The execution summary and sanitized plan artifacts are recorded as E-046 in the
+[search optimization handoff](../tasks/2026-09-21-postgresql-search-optimization-handoff.md#bounded-explain-analyze-결과).
+This section records the 2026-09-21 diagnostic. The documentation was synchronized on 2026-10-29;
+no new database diagnostic was run for this documentation update.
