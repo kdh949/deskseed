@@ -72,19 +72,20 @@ flowchart LR
 - [검색 Repository](backend/src/main/kotlin/dev/deskseed/ticketing/internal/StaffTicketQueryRepository.kt)
 - [검색 통합 테스트](backend/src/test/kotlin/dev/deskseed/staffaccess/internal/AgentTicketSearchIntegrationTest.kt)
 
-<details>
-<summary>2026년 9월 검색 성능 개선 실험 (100만 티켓)</summary>
+### 검색 성능
 
-2026년 9월, **100만 티켓·1 VU·검색 20회**로 스테이징 A/B 테스트를 진행했습니다. 첫 페이지에서 전체 건수를 계산하는 작업을 줄이고, 검색 범위가 넓을 때는 검색어를 추가로 입력하도록 바꿨습니다.
+100만 티켓이 저장된 개인 스테이징에서 1 VU로 측정했습니다.
 
-- 검색 응답 p95: **22.056초 → 1.601초**
-- 변경 후 검색 결과를 보여준 15건의 p95: **1.158초**
+| 개선 항목 | 측정 대상 | 결과 |
+| --- | --- | --- |
+| 검색 흐름 개선 · [PR #237](https://github.com/kdh949/deskseed/pull/237) | 검색 20회의 HTTP 응답 p95 | **22.056초 → 1.601초** |
+| 최신순 인덱스 · [PR #234](https://github.com/kdh949/deskseed/pull/234) | 동일 검색 요청의 HTTP 응답시간 | **4.166초 → 47.876~49.899ms** |
 
-기존에는 20건 모두 검색 결과를 반환했고, 변경 후에는 **15건 검색 결과 + 5건 검색어 추가 안내**를 반환했습니다. 전체 p95 **1.601초**는 두 응답을 함께 계산한 값입니다.
+검색 흐름 개선에서는 첫 페이지의 전체 건수 계산을 줄이고, 검색 범위가 넓으면 검색어 추가 안내를 반환하도록 바꿨습니다. 변경 전 20건은 모두 결과 목록이었고, 변경 후에는 **결과 목록 15건·검색어 추가 안내 5건**이었습니다. 결과 목록 15건의 p95는 **1.158초**였습니다.
 
-- [검색 개선 PR #237](https://github.com/kdh949/deskseed/pull/237)
+최신순 인덱스 적용 실험은 동일 검색 요청(`topic:3`)을 비교했습니다. 변경 전 HTTP 응답시간은 4.166초였고, 변경 후 세 번의 측정에서는 47.876~49.899ms였습니다.
 
-</details>
+[검색 흐름과 실험별 측정 조건](docs/architecture/ticket-search.md#성능-개선-측정)
 
 ## 2. 여러 상담사가 같은 티켓을 수정할 때
 
