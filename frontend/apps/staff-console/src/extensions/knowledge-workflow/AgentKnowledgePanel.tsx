@@ -38,13 +38,34 @@ export function AgentKnowledgePanel({
   const [searched, setSearched] = useState('')
   const [results, setResults] = useState<SearchPage | null>(null)
   const [article, setArticle] = useState<Article | null>(null)
+  const [reading, setReading] = useState(Boolean(initialSlug))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [message, setMessage] = useState('')
+  const articleTitle = useRef<HTMLHeadingElement>(null)
+  const searchForm = useRef<HTMLFormElement>(null)
+  const readButtons = useRef(new Map<string, HTMLButtonElement>())
+  const selectedSlug = useRef<string | null>(null)
+  const restoreSearchFocus = useRef(false)
+  useEffect(() => {
+    if (reading) articleTitle.current?.focus()
+    else if (restoreSearchFocus.current) {
+      restoreSearchFocus.current = false
+      const selected = selectedSlug.current
+        ? readButtons.current.get(selectedSlug.current)
+        : null
+      const target = selected ?? searchForm.current
+      target?.focus()
+    }
+  }, [reading, article?.slug])
   useEffect(() => {
     if (!initialSlug) return
     let active = true
     setBusy(true)
+    setReading(true)
+    setArticle(null)
+    setError(null)
+    setMessage('')
     readKnowledge(initialSlug)
       .then((value) => {
         if (active) setArticle(value)
@@ -92,6 +113,9 @@ export function AgentKnowledgePanel({
   }
   const open = async (slug: string) => {
     if (busy) return
+    selectedSlug.current = slug
+    setReading(true)
+    setArticle(null)
     setBusy(true)
     setError(null)
     setMessage('')
@@ -103,6 +127,13 @@ export function AgentKnowledgePanel({
     } finally {
       setBusy(false)
     }
+  }
+  const returnToSearch = () => {
+    restoreSearchFocus.current = true
+    setReading(false)
+    setArticle(null)
+    setError(null)
+    setMessage('')
   }
   const insert = async () => {
     if (!article || !onInsert || busy || disabled) return
@@ -130,25 +161,36 @@ export function AgentKnowledgePanel({
     article && articleLink(article, mode, window.location.origin)
   return (
     <section className="knowledge-panel" aria-label="상담 지식 검색">
-      <form onSubmit={(event) => void search(event)}>
-        <SeedTextField
-          label="지식 검색어"
-          required
-          maxLength={512}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <div className="knowledge-actions">
-          <SeedButton type="submit" disabled={busy || !query.trim()}>
-            지식 검색
-          </SeedButton>
-          {ticketNumber && (
-            <SeedButton disabled={busy} onClick={() => void suggest()}>
-              이 티켓의 추천 문서
+      {reading ? (
+        <SeedButton disabled={busy} onClick={returnToSearch}>
+          검색 결과로 돌아가기
+        </SeedButton>
+      ) : (
+        <form
+          ref={searchForm}
+          tabIndex={-1}
+          aria-label="지식 문서 검색"
+          onSubmit={(event) => void search(event)}
+        >
+          <SeedTextField
+            label="지식 검색어"
+            required
+            maxLength={512}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <div className="knowledge-actions">
+            <SeedButton type="submit" disabled={busy || !query.trim()}>
+              지식 검색
             </SeedButton>
-          )}
-        </div>
-      </form>
+            {ticketNumber && (
+              <SeedButton disabled={busy} onClick={() => void suggest()}>
+                이 티켓의 추천 문서
+              </SeedButton>
+            )}
+          </div>
+        </form>
+      )}
       {Boolean(error) && (
         <SeedNotice
           title={
@@ -163,30 +205,36 @@ export function AgentKnowledgePanel({
       )}
       {busy && <p role="status">문서를 확인하고 있습니다.</p>}
       {message && <p role="status">{message}</p>}
-      {results?.items.length === 0 && (
+      {!reading && results?.items.length === 0 && (
         <p>검색 결과가 없습니다. 다른 검색어로 찾아보세요.</p>
       )}
-      <ul className="knowledge-list">
-        {results?.items.map((hit) => (
-          <li key={hit.articleSlug}>
-            <div>
-              <strong>{hit.title}</strong>
-              <p>
-                {AUDIENCES[hit.audience]} · {hit.categoryTitle} /{' '}
-                {hit.sectionTitle}
-              </p>
-              <p>{hit.excerpt}</p>
-            </div>
-            <SeedButton
-              disabled={busy}
-              onClick={() => void open(hit.articleSlug)}
-            >
-              읽기: {hit.title}
-            </SeedButton>
-          </li>
-        ))}
-      </ul>
-      {results?.nextCursor && searched && (
+      {!reading && (
+        <ul className="knowledge-list">
+          {results?.items.map((hit) => (
+            <li key={hit.articleSlug}>
+              <div>
+                <strong>{hit.title}</strong>
+                <p>
+                  {AUDIENCES[hit.audience]} · {hit.categoryTitle} /{' '}
+                  {hit.sectionTitle}
+                </p>
+                <p>{hit.excerpt}</p>
+              </div>
+              <SeedButton
+                ref={(button) => {
+                  if (button) readButtons.current.set(hit.articleSlug, button)
+                  else readButtons.current.delete(hit.articleSlug)
+                }}
+                disabled={busy}
+                onClick={() => void open(hit.articleSlug)}
+              >
+                읽기: {hit.title}
+              </SeedButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!reading && results?.nextCursor && searched && (
         <SeedButton
           disabled={busy}
           onClick={() => void search(undefined, results.nextCursor!)}
@@ -194,9 +242,11 @@ export function AgentKnowledgePanel({
           다음 검색 결과
         </SeedButton>
       )}
-      {article?.currentPublishedRevision && (
+      {reading && article?.currentPublishedRevision && (
         <article>
-          <h2>{article.currentPublishedRevision.title}</h2>
+          <h2 ref={articleTitle} tabIndex={-1}>
+            {article.currentPublishedRevision.title}
+          </h2>
           <p>
             {AUDIENCES[article.audience.type]} · 문서 버전{' '}
             {article.currentPublishedRevision.revisionNumber}
