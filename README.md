@@ -6,7 +6,7 @@
 
 **Kotlin · Java 21 · Spring Boot · Spring Modulith · PostgreSQL · React/TypeScript**
 
-[실행 방법](#로컬-실행과-테스트) · [고객·직원 화면 분리](docs/adr/0044-customer-portal-frontend-surface-isolation.md) · [Core API](api/core-api-outline-v1.yaml)
+[실행 방법](#로컬-실행과-테스트) · [아키텍처](#아키텍처) · [고객·직원 화면 분리](docs/adr/0044-customer-portal-frontend-surface-isolation.md) · [Core API](api/core-api-outline-v1.yaml)
 
 ## 화면 둘러보기
 
@@ -26,6 +26,39 @@
 - **동시 수정:** 버전과 수정한 항목을 비교해 충돌 시 `409` 반환, 작성 중인 답변 보존
 - **감사 기록:** 티켓 수정·열람 이력, 권한별 접근, Audit Explorer
 - **외부 API:** 허용 네트워크와 API key scope로 접근 제한, 티켓 생성·조회·변경, `Idempotency-Key`와 `If-Match` 처리
+
+## 아키텍처
+
+```mermaid
+flowchart LR
+    n_portal["Customer Portal<br/>문의 등록 · 내 문의 · KB"]:::client
+    n_staff["Staff Console<br/>상담사 워크스페이스<br/>관리자"]:::client
+    n_waf["Sophos WAF<br/>HTTPS 진입<br/>Reverse Proxy"]:::edge
+    n_nginx["Nginx<br/>API · WebSocket<br/>프록시"]:::edge
+    n_api["DeskSeed API<br/>Spring Modulith<br/>Kotlin · Spring Boot"]:::app
+    n_db[("PostgreSQL<br/>업무 데이터<br/>검색 문서 · Outbox")]:::data
+    n_storage[("VersityGW<br/>첨부파일 저장")]:::external
+    n_redis[("Redis<br/>고객 인증 요청 제한")]:::data
+
+    n_portal -->|"HTTPS"| n_waf
+    n_staff -->|"HTTPS ·<br/>WebSocket"| n_waf
+    n_waf -->|"HTTP · WS"| n_nginx
+    n_nginx -->|"/api · /ws"| n_api
+    n_api -->|"SQL"| n_db
+    n_api -->|"S3 API"| n_storage
+    n_api --> n_redis
+
+    classDef client fill:#eff6ff,stroke:#60a5fa,color:#17233b
+    classDef edge fill:#f8fafc,stroke:#94a3b8,color:#17233b
+    classDef app fill:#f0fdfa,stroke:#2bbbad,color:#17233b
+    classDef data fill:#fff7ed,stroke:#fdba74,color:#17233b
+    classDef external fill:#f5f3ff,stroke:#bda4ee,color:#17233b
+    classDef decision fill:#f0fdfa,stroke:#2bbbad,color:#17233b
+```
+
+고객 포털과 직원 콘솔은 공통 API를 사용하며 인증과 조회 데이터를 분리합니다. PostgreSQL은 티켓·감사·검색 데이터를, VersityGW는 첨부파일을 보관합니다. Redis는 고객 인증 요청 제한에 사용합니다.
+
+[전체 구조](docs/architecture/overview.md) · [티켓 수정과 동시 수정 충돌 처리](docs/architecture/ticket-command.md) · [활성·종료 티켓 검색](docs/architecture/ticket-search.md) · [고객 문의 조회와 공개 답변 분리](docs/architecture/customer-read.md)
 
 ## 1. 검색할 티켓부터 선택해 JOIN 줄이기
 
