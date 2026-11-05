@@ -112,7 +112,7 @@ describe('AdminCustomerAccessModePage', () => {
     ).toBeDisabled()
     expect(select).toBeDisabled()
     expect(
-      screen.getByRole('button', { name: '서버 값 새로고침' }),
+      screen.getByRole('button', { name: '저장된 설정 새로고침' }),
     ).toBeDisabled()
 
     pending.resolve(

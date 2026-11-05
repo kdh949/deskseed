@@ -262,7 +262,7 @@ export function AdminFirstReplySlaPage() {
     return (
       <AdminSlaScreenState
         kind="loading"
-        title="First Reply SLA 정책을 불러오는 중"
+        title="최초 답변 목표 정책을 불러오는 중"
       />
     )
   }
@@ -279,14 +279,14 @@ export function AdminFirstReplySlaPage() {
         }
         description={
           denied
-            ? 'SLA 정책은 ADMIN만 관리할 수 있습니다.'
+            ? 'SLA 정책은 관리자만 관리할 수 있습니다.'
             : '잠시 후 SLA 정책을 다시 요청해 주세요.'
         }
         kind={denied ? 'denied' : 'error'}
         title={
           denied
             ? 'SLA 정책 관리 권한이 없습니다.'
-            : 'First Reply SLA 정책을 불러오지 못했습니다.'
+            : '최초 답변 목표 정책을 불러오지 못했습니다.'
         }
       />
     )
@@ -345,13 +345,13 @@ export function AdminFirstReplySlaPage() {
   }
 
   return (
-    <main aria-label="First Reply SLA 관리" className="admin-page">
+    <main aria-label="최초 답변 목표 관리" className="admin-page">
       <header className="admin-page-header">
         <div>
-          <h1>First Reply SLA</h1>
+          <h1>최초 답변 목표</h1>
           <p>
-            첫 PUBLIC 답변의 목표, pause 상태, 적용 순서와 영업 시간표
-            snapshot을 version으로 관리합니다.
+            고객에게 공개되는 첫 답변의 목표 시간, 시간 계산을 멈추는 상태, 적용
+            순서와 영업 시간표를 버전별로 관리합니다.
           </p>
         </div>
         <div className="admin-inline-actions">
@@ -381,7 +381,7 @@ export function AdminFirstReplySlaPage() {
           title="영업 시간표 선택 목록을 불러오지 못했습니다."
           tone="danger"
         >
-          <p>SLA 정책을 작성하려면 실제 영업 시간표 projection이 필요합니다.</p>
+          <p>SLA 정책을 작성하려면 저장된 영업 시간표 정보가 필요합니다.</p>
         </Notification>
       ) : null}
       {groupsQuery.isError ? (
@@ -400,24 +400,24 @@ export function AdminFirstReplySlaPage() {
         aria-labelledby="sla-policy-list-heading"
         className="admin-surface"
       >
-        <h2 id="sla-policy-list-heading">First Reply SLA 정책</h2>
+        <h2 id="sla-policy-list-heading">최초 답변 목표 정책</h2>
         {policiesQuery.data.length === 0 ? (
           <ScreenState
             compact
             description="영업 시간표를 먼저 준비한 뒤 SLA 정책을 작성하고 명시적으로 활성화하세요."
             kind="empty"
-            title="등록된 First Reply SLA 정책이 없습니다."
+            title="등록된 최초 답변 목표 정책이 없습니다."
           />
         ) : (
           <div className="admin-table-wrap">
             <table className="admin-table">
-              <caption className="sr-only">First Reply SLA 정책 목록</caption>
+              <caption className="sr-only">최초 답변 목표 정책 목록</caption>
               <thead>
                 <tr>
                   <th scope="col">이름</th>
                   <th scope="col">순서</th>
-                  <th scope="col">시간표 version</th>
-                  <th scope="col">최신 / 활성 version</th>
+                  <th scope="col">시간표 버전</th>
+                  <th scope="col">최신 / 활성 버전</th>
                   <th scope="col">상태</th>
                   <th scope="col">작업</th>
                 </tr>
@@ -460,7 +460,7 @@ export function AdminFirstReplySlaPage() {
           <div className="admin-page-header">
             <div>
               <h2 id="sla-policy-detail-heading">{selectedPolicy.name}</h2>
-              <p>{`aggregate version ${selectedPolicy.aggregateVersion} · schedule version ${selectedPolicy.scheduleVersion}`}</p>
+              <p>{`설정 변경 번호 ${selectedPolicy.aggregateVersion} · 시간표 버전 ${selectedPolicy.scheduleVersion}`}</p>
             </div>
             <div className="admin-inline-actions">
               <DsButton
@@ -468,7 +468,7 @@ export function AdminFirstReplySlaPage() {
                 onClick={openNewVersion}
                 tone="primary"
               >
-                새 version 작성
+                새 버전 작성
               </DsButton>
               <DsButton
                 onClick={() => setSelectedPolicy(null)}
@@ -482,24 +482,24 @@ export function AdminFirstReplySlaPage() {
             <ScreenState
               compact
               kind="loading"
-              title="SLA policy version 이력을 불러오는 중"
+              title="SLA 정책 버전 이력을 불러오는 중"
             />
           ) : versionsQuery.isError ? (
             <Notification
-              title="SLA policy version 이력을 불러오지 못했습니다."
+              title="SLA 정책 버전 이력을 불러오지 못했습니다."
               tone="danger"
             />
           ) : (
             <>
               <ul
                 className="admin-version-list"
-                aria-label="SLA policy version 이력"
+                aria-label="SLA 정책 버전 이력"
               >
                 {versionsQuery.data.map((version) => (
                   <li key={version.version}>
-                    <strong>{`version ${version.version}`}</strong>
+                    <strong>{`버전 ${version.version}`}</strong>
                     <span className="admin-muted">
-                      {version.active ? '현재 활성' : '비활성 version'}
+                      {version.active ? '현재 활성' : '비활성 버전'}
                     </span>
                     <span className="admin-muted">
                       {formatTimestamp(version.createdAt)}
@@ -511,7 +511,7 @@ export function AdminFirstReplySlaPage() {
                       onClick={() => setSelectedVersionNumber(version.version)}
                       tone="secondary"
                     >
-                      이 version 검토
+                      이 버전 검토
                     </DsButton>
                   </li>
                 ))}
@@ -530,9 +530,9 @@ export function AdminFirstReplySlaPage() {
                 <div
                   className="admin-confirmation"
                   role="group"
-                  aria-label="SLA policy version 활성화 최종 확인"
+                  aria-label="SLA 정책 버전 활성화 최종 확인"
                 >
-                  <p>{`version ${selectedVersion.version}을(를) 활성화할까요? 이미 계산된 target snapshot은 변경하지 않습니다.`}</p>
+                  <p>{`버전 ${selectedVersion.version}을(를) 활성화할까요? 이미 티켓에 적용된 목표는 변경하지 않습니다.`}</p>
                   <DsButton
                     disabled={activateMutation.isPending}
                     onClick={() =>
@@ -545,7 +545,7 @@ export function AdminFirstReplySlaPage() {
                   >
                     {activateMutation.isPending
                       ? '활성화 중…'
-                      : 'version 활성화 확정'}
+                      : '버전 활성화 확정'}
                   </DsButton>
                   <DsButton
                     disabled={activateMutation.isPending}
@@ -556,13 +556,13 @@ export function AdminFirstReplySlaPage() {
                   </DsButton>
                   {activateMutation.isError ? (
                     <SlaMutationNotification
-                      action="SLA policy version을 활성화"
+                      action="SLA 정책 버전을 활성화"
                       error={activateMutation.error}
                     />
                   ) : null}
                   {activateMutation.isSuccess ? (
                     <Notification
-                      title="SLA policy version을 활성화했습니다."
+                      title="SLA 정책 버전을 활성화했습니다."
                       tone="success"
                     />
                   ) : null}
@@ -582,11 +582,11 @@ export function AdminFirstReplySlaPage() {
             <div>
               <h2 id="sla-policy-editor-heading">
                 {selectedPolicy
-                  ? `${selectedPolicy.name} 새 version`
-                  : '새 First Reply SLA 정책'}
+                  ? `${selectedPolicy.name} 새 버전`
+                  : '새 최초 답변 목표 정책'}
               </h2>
               <p>
-                저장 전 미리보기는 candidate policy만 평가하고 정책 version을
+                저장 전 미리보기는 작성 중인 정책만 평가하며 새 정책 버전을
                 만들지 않습니다.
               </p>
             </div>
@@ -783,7 +783,7 @@ export function AdminFirstReplySlaPage() {
                   >
                     <p>
                       서버 응답이 유실되었을 수 있어 같은 요청을 다시 제출하지
-                      않습니다. 정책 목록과 version 이력을 다시 읽었습니다. 서버
+                      않습니다. 정책 목록과 버전 이력을 다시 읽었습니다. 서버
                       상태를 확인한 뒤 이 작성 화면을 닫고 다음 작업을 선택해
                       주세요.
                     </p>
@@ -796,7 +796,7 @@ export function AdminFirstReplySlaPage() {
                 ) : null}
                 {saveMutation.isSuccess ? (
                   <Notification
-                    title="SLA policy version을 저장했습니다."
+                    title="SLA 정책 버전을 저장했습니다."
                     tone="success"
                   />
                 ) : null}
@@ -809,7 +809,7 @@ export function AdminFirstReplySlaPage() {
                     {saveMutation.isPending
                       ? 'SLA 정책 저장 중…'
                       : selectedPolicy
-                        ? '새 version 저장'
+                        ? '새 버전 저장'
                         : 'SLA 정책 생성'}
                   </DsButton>
                 </div>
@@ -843,11 +843,11 @@ function SlaAnalytics({
 }) {
   if (query.isPending) {
     return (
-      <section aria-label="First Reply SLA 성과" className="admin-surface">
+      <section aria-label="최초 답변 목표 성과" className="admin-surface">
         <ScreenState
           compact
           kind="loading"
-          title="First Reply SLA 성과를 불러오는 중"
+          title="최초 답변 목표 성과를 불러오는 중"
         />
       </section>
     )
@@ -855,7 +855,7 @@ function SlaAnalytics({
   if (query.isError) {
     return (
       <Notification
-        title="First Reply SLA 성과를 불러오지 못했습니다."
+        title="최초 답변 목표 성과를 불러오지 못했습니다."
         tone="danger"
       >
         <p>
@@ -867,7 +867,7 @@ function SlaAnalytics({
   const analytics = query.data
   return (
     <section aria-labelledby="sla-analytics-heading" className="admin-surface">
-      <h2 id="sla-analytics-heading">현재 First Reply SLA 성과</h2>
+      <h2 id="sla-analytics-heading">현재 최초 답변 목표 성과</h2>
       <dl className="admin-definition-list">
         <div>
           <dt>활성</dt>
@@ -920,12 +920,12 @@ function SlaReadModel({
     >
       <div className="admin-page-header">
         <div>
-          <h3 id="sla-version-review-heading">{`version ${policy.version} 검토`}</h3>
-          <p>{`${policy.active ? '활성' : '비활성'} · 시간표 version ${policy.scheduleVersion}`}</p>
+          <h3 id="sla-version-review-heading">{`버전 ${policy.version} 검토`}</h3>
+          <p>{`${policy.active ? '활성' : '비활성'} · 시간표 버전 ${policy.scheduleVersion}`}</p>
         </div>
         {showActivate ? (
           <DsButton onClick={onActivate} tone="primary">
-            이 version 활성화
+            이 버전 활성화
           </DsButton>
         ) : null}
       </div>
@@ -1145,7 +1145,7 @@ function SlaMutationNotification({
     >
       <p>
         {conflict
-          ? '작성 중인 정책은 보존했습니다. 최신 version을 새로고침한 뒤 다시 검토해 주세요.'
+          ? '작성 중인 정책은 보존했습니다. 최신 버전을 새로고침한 뒤 다시 검토해 주세요.'
           : '작성 중인 정책은 보존했습니다. 서버 검증 오류를 확인한 뒤 다시 시도해 주세요.'}
       </p>
     </Notification>
