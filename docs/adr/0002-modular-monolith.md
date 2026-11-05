@@ -1,25 +1,24 @@
-# ADR 0002: Modular monolith before microservices
+# ADR 0002: Spring Modulith 기반 모듈러 모놀리스
 
 - Status: Accepted
 - Date: 2026-08-10
 
 ## Context
 
-Ticketing has multiple domains—customer identity, tickets, staff, settings, automation, SLA, reporting—but the initial team and deployment are small. Starting with services, Kafka, and distributed transactions would add operational failure modes before domain boundaries are understood.
+고객 인증, 티켓, 직원, 설정, 자동화, SLA, 통계는 서로 다른 업무를 다루지만 초기 개발 인원과 배포 규모는 작습니다. 처음부터 서비스를 나누면 업무 규칙을 정리하는 동시에 네트워크 장애와 분산 트랜잭션까지 처리해야 합니다.
 
 ## Decision
 
-Build one Spring Boot deployable organized as Spring Modulith application modules. Modules expose narrow root-package APIs and keep persistence/framework details in `internal` packages. CI verifies module boundaries.
+하나의 Spring Boot 애플리케이션 안에서 Spring Modulith로 업무 모듈을 나눕니다. 모듈 간 호출은 root package의 API를 사용하고, DB 접근과 프레임워크 코드는 각 모듈의 `internal` package에 둡니다. CI에서 모듈 간 의존성을 검사합니다.
 
 ## Alternatives
 
-- Package-by-layer monolith: easy initially, but encourages cross-domain coupling.
-- Microservices from day one: adds network, consistency, deployment, and observability complexity without evidence.
+- 계층별 package 구성: 시작은 간단하지만 서로 다른 업무의 서비스와 Repository가 쉽게 얽힙니다.
+- 초기부터 마이크로서비스 구성: 네트워크, 데이터 동기화, 배포, 모니터링을 추가로 운영해야 합니다. 초기 규모에서는 그 비용을 감수할 이유가 부족합니다.
 
 ## Consequences
 
-AI V1의 Python 실행 역할·별도 AI DB/Redis 예외는 ADR 0049로만 승인한다. 이는 기존 업무 backend bounded context를 서비스로 분해하는 일반 승인이 아니다.
-
-- One database and local transactions give fast delivery and strong consistency for the MVP.
-- Domain events may coordinate modules; external integration events and Kafka come only after durable outbox requirements exist.
-- A future service extraction must be justified by ownership, scaling, deployment, or reliability pressure.
+- MVP는 하나의 DB와 로컬 트랜잭션으로 처리합니다.
+- 모듈 간 작업은 도메인 이벤트로 연결할 수 있습니다. 외부 전달은 DB에 발송 요청을 남기는 outbox를 먼저 갖추고, 필요한 경우 Kafka를 도입합니다.
+- 서비스를 분리할 때는 담당 조직, 처리량, 독립 배포 또는 장애 격리 요구를 근거로 결정합니다.
+- AI V1의 Python 실행 환경과 별도 DB·Redis는 ADR 0049에서 정합니다. 기존 업무 모듈은 이 문서의 모듈러 모놀리스 구조를 유지합니다.

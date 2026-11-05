@@ -1,10 +1,8 @@
-# Release Hardening Task Brief
+# 2026년 8월 포트폴리오 릴리스 검증 계획
 
 ## Goal
 
-구현된 Core MVP와 Audit Explorer 경로를 새 기능 추가 없이 검증하고, 동일한
-결과를 로컬에서 설치·복구·성능 측정까지 재현할 수 있는 포트폴리오 릴리스로
-고정한다.
+당시 구현된 Core MVP와 Audit Explorer를 대상으로 설치·복구·성능 측정을 재현하는 계획이다. 이 문서의 구현·제외 범위는 2026년 8월 릴리스 작업을 기준으로 하며, 이후 기능의 상태는 각 후속 ADR과 검증 기록에서 확인한다.
 
 ## Decision and source references
 
@@ -19,14 +17,9 @@
 - Gates: ARCH-001/002/004, TKT-001~006, CHG-001~005, ACC-001~004/007,
   AUD-001~006, PERF-001~003, UI-001~005, OPS-001~004, PERM-001/002
 
-이 작업은 보안 검증 결과에 따라 ADR 0014의 routine human-readable query
-representation만 ADR 0036/D-048로 supersede한다. 그 밖의 accepted decision은
-바꾸지 않으며, 측정 결과와 운영 리허설은 PostgreSQL·모듈러 모놀리스·Docker
-Compose 선택을 재검토할 근거를 추가한다.
+보안 검토 결과에 따라 일반 감사 조회에서 검색 내용을 표시하던 ADR 0014의 결정을 ADR 0036/D-048로 변경한다. 그 밖의 Accepted 결정은 유지한다. 측정과 운영 연습 결과는 PostgreSQL·모듈러 모놀리스·Docker Compose의 다음 검토에 사용한다.
 
-같은 보안 검증에서 발견한 shared-cookie 교차 탭 actor 혼동은 D-050으로 고정한다.
-이는 인증 source를 header로 옮기는 결정이 아니라 server session principal을 유지한
-채 stale browser intent를 fail-closed하는 additive consistency guard다.
+여러 탭이 쿠키를 공유하면서 화면에 표시된 직원과 실제 로그인 직원이 달라지는 문제는 D-050으로 처리한다. 서버 세션으로 작업할 직원을 결정하고, 화면에서 보낸 직원 ID는 세션과 일치하는지만 확인한다. 일치하지 않으면 해당 요청을 거부한다.
 
 ## Actor and source
 

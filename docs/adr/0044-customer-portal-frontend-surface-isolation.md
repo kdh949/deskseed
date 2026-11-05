@@ -1,4 +1,4 @@
-# ADR 0044 — Customer Portal frontend surface isolation
+# ADR 0044 — 고객 포털과 직원 콘솔 분리
 
 ## Status
 
@@ -6,28 +6,27 @@ Accepted
 
 ## Context
 
-ADR 0039 temporarily used a single frontend root while customer-facing pages were being rebuilt. Customer authentication, requests, attachments and public Knowledge Base contracts are ready for implementation, and customer routes are active again. Sharing the Agent Workspace theme, global CSS, Storybook and build graph makes it easier to pull staff layouts or tokens into customer pages accidentally.
+ADR 0039에서는 고객 화면을 다시 만드는 동안 하나의 프런트엔드 루트를 사용했습니다. 이후 고객 인증·문의·첨부파일·공개 도움말 계약이 준비되고 고객 경로가 다시 활성화됐습니다. 직원용 테마, 전역 CSS, Storybook과 빌드를 공유하면 고객 화면이 직원 레이아웃이나 토큰을 실수로 참조하기 쉽습니다.
 
-Customers need a responsive help-center UI; staff use a denser console. Separate application bundles keep their styles and components independent.
+고객은 반응형 도움말 화면을 사용하고, 직원은 많은 정보를 한 번에 보는 콘솔을 사용합니다. 두 앱의 빌드와 스타일을 나눠 한쪽의 변경이 다른 쪽에 섞이지 않도록 합니다.
 
 ## Decision
 
-- `frontend/apps/customer-portal` and `frontend/apps/staff-console` are separate React/Vite applications with independent entrypoints, bundles, global CSS, design-system public exports, Storybook configurations, and project-local MCP names.
-- Production keeps one origin. Nginx routes `/agent`, `/admin`, and `/audit` to the staff application, and `/`, `/help`, `/requests`, `/account`, and `/customer` to the customer application. `/api` and `/actuator` remain backend proxy routes with higher precedence.
-- The two applications do not share React components, theme providers, CSS, design tokens, icon registries, layout shells, stories, fixtures, or runtime TypeScript modules.
-- The only shared frontend inputs are immutable Deskseed source brand assets and license notices. Each application owns its own component wrapper around those assets.
-- Staff keeps the existing `--ds-*` token namespace. Customer tokens use `--customer-*` and are defined only in the customer design-system root.
-- Customer feature code imports only the customer design-system public entrypoint. Staff feature code imports only the staff design-system public entrypoint. Direct Garden imports remain restricted to the owning design-system root.
-- A repository boundary check, ESLint restrictions, TypeScript roots, CSS token/import checks, and production manifest checks fail when one surface reaches into the other.
-- Storybook is split into `deskseed-staff-design-proj` on port 6006 and `deskseed-customer-design-proj` on port 6007. Each nested `AGENTS.md` directs Codex to the matching documentation source and forbids using the other surface as a design reference except for an explicit boundary audit or migration.
-- Customer reference images provide layout hierarchy and visual tone only. Frozen API, authorization, privacy, accessibility, and domain contracts override fields or actions visible in those images. Screenshots or crops are never shipped as UI.
+- `frontend/apps/customer-portal`과 `frontend/apps/staff-console`을 독립된 React/Vite 앱으로 구성합니다. 진입점, 번들, 전역 CSS, 디자인 시스템의 공개 API, Storybook 설정과 프로젝트별 MCP 이름을 각각 관리합니다.
+- 운영에서는 같은 origin을 유지합니다. Nginx는 `/agent`, `/admin`, `/audit`를 직원 앱으로, `/`, `/help`, `/requests`, `/account`, `/customer`를 고객 앱으로 보냅니다. `/api`와 `/actuator`는 우선순위가 높은 Backend proxy 경로로 유지합니다.
+- React 컴포넌트, theme provider, CSS, 디자인 토큰, 아이콘 등록, 레이아웃, story, 테스트 데이터와 runtime TypeScript 모듈은 두 앱이 각각 소유합니다.
+- 함께 사용하는 파일은 변경 불가 Deskseed 브랜드 원본과 라이선스 고지입니다. 해당 파일을 사용하는 컴포넌트도 앱별로 만듭니다.
+- 직원 앱은 기존 `--ds-*` 토큰을 유지합니다. 고객 토큰은 고객 디자인 시스템 루트에만 `--customer-*`로 정의합니다.
+- feature 코드는 해당 앱의 디자인 시스템 공개 진입점에서만 import합니다. Garden을 직접 import하는 코드는 각 디자인 시스템 루트로 제한합니다.
+- 저장소 검사, ESLint, TypeScript roots, CSS 토큰·import 검사와 운영 manifest 검사에서 다른 앱을 참조하면 실패 처리합니다.
+- 직원 Storybook은 `deskseed-staff-design-proj`의 6006번, 고객 Storybook은 `deskseed-customer-design-proj`의 6007번 포트로 나눕니다. 각 앱의 `AGENTS.md`는 맞는 문서 도구를 사용하도록 안내합니다. 명시적인 분리 검토나 마이그레이션 외에는 다른 앱을 디자인 참조로 사용하지 않습니다.
+- 고객 화면의 참고 이미지는 레이아웃과 시각적 분위기를 파악하는 데 사용합니다. 필드·액션은 확정 API, 권한, 개인정보, 접근성과 도메인 계약을 따릅니다. 참고 이미지나 잘라낸 이미지를 제품 UI로 배포하지 않습니다.
 
-This ADR supersedes ADR 0039 only where that ADR requires one frontend visual root and keeps customer routes deferred. ADR 0039 continues to govern the Agent Workspace surface, preserved headless contracts, and staff visual coherence.
+이 ADR은 ADR 0039 중 단일 프런트엔드 루트와 고객 경로 보류 결정을 변경합니다. 직원 워크스페이스, Backend 계약 보존과 직원 화면의 일관성에 관한 ADR 0039 결정은 유지합니다.
 
 ## Consequences
 
-- A customer-only change cannot alter the staff bundle or global styles without crossing a machine-enforced boundary.
-- A staff-only change cannot silently reuse or restyle customer components.
-- Dependency and build configuration are duplicated where necessary; that duplication is an intentional cost of deployable isolation.
-- Same-origin cookies, CSRF, CORS, customer magic links, and request access proofs retain their current server semantics.
-- Customer profile/preferences, SSO, live chat, phone, announcements, customer SLA display, and automatic ticket-to-KB suggestions remain absent until matching contracts are frozen.
+- 고객 앱만 수정할 때 직원 번들이나 전역 스타일을 바꾸면 자동 검사에서 다른 앱 참조로 탐지합니다. 직원 앱이 고객 컴포넌트를 재사용하거나 스타일을 바꾸는 경우도 검사합니다.
+- 별도 빌드와 배포를 위해 필요한 의존성·설정 중복을 허용합니다.
+- 같은 origin의 쿠키·CSRF·CORS, 고객 매직 링크와 문의 접근 증명은 기존 서버 동작을 유지합니다.
+- 고객 프로필·환경설정, SSO, 실시간 채팅, 전화, 공지, 고객 SLA 표시와 티켓 기반 자동 도움말 추천은 해당 계약이 확정될 때까지 이 결정의 구현 범위에 포함하지 않습니다.

@@ -1,20 +1,20 @@
-# ADR 0007: Field-aware optimistic concurrency
+# ADR 0007: 수정한 필드를 비교하는 낙관적 동시성 제어
 
 - Status: Accepted
 - Date: 2026-08-10
 
 ## Context
 
-Agents may edit the same ticket concurrently. Pure last-write-wins silently loses work, while pessimistic locks obstruct normal collaboration.
+여러 상담사가 같은 티켓을 수정할 수 있습니다. 나중 요청으로 전체 티켓을 덮어쓰면 먼저 저장한 내용이 사라집니다. 반대로 편집하는 동안 락을 잡으면 다른 상담사의 작업을 막게 됩니다.
 
 ## Decision
 
-Use an optimistic ticket version and field-aware conflict detection. A stale request may merge when its changed fields do not overlap changes since `expectedVersion`. A stale write to the same field returns HTTP 409 with `conflictingFields` and the current version. The UI displays a red conflict banner at the top of the field sidebar.
+티켓 버전과 수정한 필드를 함께 확인합니다. 오래된 버전의 요청이라도 `expectedVersion` 이후에 바뀐 필드와 겹치지 않으면 최신 상태에 반영합니다. 같은 필드가 바뀌었다면 현재 버전과 `conflictingFields`를 담아 HTTP 409를 반환합니다. 화면은 속성 패널 상단에 충돌 배너를 표시합니다.
 
-Comments are append-only commands and should not conflict merely because a metadata field changed.
+댓글은 추가만 하는 명령으로 처리합니다. 상태나 담당자 같은 필드가 바뀌었다는 이유만으로 댓글 추가를 충돌로 처리하지 않습니다.
 
 ## Consequences
 
-- M3 must store enough audit/version metadata to identify fields changed since a version.
-- The API must send an explicit change set, not a blindly serialized ticket object.
-- The UI needs reload, keep-local, and retry affordances.
+- M3는 각 버전에서 바뀐 필드를 찾을 수 있도록 감사 기록에 버전과 변경 항목을 저장합니다.
+- API 요청은 사용자가 수정한 필드를 명시합니다.
+- 화면에서는 최신 값 다시 불러오기, 작성 내용 유지, 재시도를 제공합니다.
