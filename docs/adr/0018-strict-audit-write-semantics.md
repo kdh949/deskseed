@@ -1,27 +1,27 @@
-# ADR 0018: Fail closed when required audit persistence fails
+# ADR 0018: 필수 감사 기록 저장에 실패하면 요청도 실패 처리
 
 - Status: Accepted
 - Date: 2026-08-10
 
 ## Context
 
-The product promises that sensitive staff reads/searches and business mutations are auditable. Returning protected data or committing a change while silently dropping the corresponding audit record would make that promise unreliable.
+티켓 변경과 민감정보 조회는 누가 어떤 작업을 했는지 추적할 수 있어야 합니다. 감사 저장에 실패한 채 데이터를 변경하거나 반환하면 해당 작업을 조사할 기록이 남지 않습니다.
 
 ## Decision
 
-- Ticket/admin mutation and its change audit commit atomically.
-- Sensitive ticket/customer/search/audit reads persist their AccessAuditEvent before returning success.
-- If required audit persistence fails, return a stable service problem and do not silently succeed.
-- Rebuildable explorer projection failure does not invalidate a canonical ledger write.
+- 티켓·관리자 데이터 변경과 변경 감사 기록은 같은 트랜잭션에서 커밋하거나 롤백합니다.
+- 티켓·고객·검색·감사 데이터의 민감한 조회는 `AccessAuditEvent`를 저장한 뒤 성공 응답을 반환합니다.
+- 필수 감사 저장에 실패하면 정해진 오류 응답을 반환합니다.
+- Audit Explorer의 조회용 데이터를 갱신하지 못해도 원본 감사 기록의 저장은 유지합니다. 조회용 데이터는 원본으로 다시 만들 수 있습니다.
 
 ## Alternatives considered
 
-- Best-effort asynchronous access logs: rejected for silent gaps.
-- Write operational log only: rejected because it is not canonical or protected.
-- Fail closed for every public/health read: rejected; only defined sensitive operations carry the obligation.
+- 접근 로그를 비동기로 저장: 실패한 기록이 빠져도 요청은 성공하므로 필요한 추적을 보장하지 못합니다.
+- 일반 애플리케이션 로그만 사용: 업무 변경과 함께 저장되지 않고, 감사 기록에 필요한 보호도 적용되지 않습니다.
+- 공개 페이지와 health 조회까지 모두 실패 처리: 이 정책은 감사 기록이 필수인 민감한 작업에만 적용합니다.
 
 ## Consequences
 
-- Audit storage availability becomes part of sensitive-path availability.
-- Performance overhead must be measured and optimized.
-- The policy can be revisited only through an explicit compliance/availability ADR.
+- 감사 저장소 장애는 민감한 요청의 실패로 이어집니다.
+- 감사 저장에 드는 비용을 측정하고 최적화합니다.
+- 감사 추적과 가용성의 우선순위를 바꿀 때는 별도 ADR로 결정합니다.

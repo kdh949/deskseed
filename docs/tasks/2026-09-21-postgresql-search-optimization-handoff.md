@@ -1,10 +1,8 @@
 # PostgreSQL 상담사 검색 개선 — 실행 및 인계 문서
 
-작성일: 2026-09-21. 대화 기록 없이 후속 에이전트가 이어서 실행하기 위한 문서다.
+작성일: 2026-09-21. 검색 개선 실험의 결과와 다음 작업에 필요한 환경·절차를 기록했다. 2026-10-29에는 2026-09-21에 실행한 E-046 결과를 문서에 반영했다. 해당 갱신에서 DB 진단을 다시 실행한 것은 아니다.
 
-2026-10-29 기록 동기화: 2026-09-21에 수행한 E-046 실행 결과를 반영했다. 이번 문서 갱신에서 DB 진단을 새로 실행하지 않았다.
-
-**현재 상태: 두 개의 제품 후보를 PR·배포·반복 검증했고, 명시적 허용으로 post-fix executor plan까지 확보했다. 최신순 인덱스 후보는 동일 문제 입력과 고정 corpus에서 채택 기준을 충족했다. generator telemetry가 없어 본 부하 상승은 미실행이다.**
+**실험 결과:** PR #233과 #234를 배포해 같은 검색 데이터로 반복 비교했다. 최신순 인덱스 추가 후 동일 문제 요청은 4.166초에서 약 48~50ms로 줄었고, 변경 후 실행계획도 확보했다. 부하 발생기의 CPU·메모리·네트워크 지표가 없어 요청량을 높이는 본 부하 테스트는 실행하지 않았다.
 
 ## 1. 재개 위치와 완료 상태
 
@@ -21,10 +19,10 @@
 | 증거 루트 | `/Users/donghyunkim/Documents/deskseed/artifacts/search-load/postgresql-search-20260921T083600Z` |
 | 실제 서버 기준선 | **실행 완료:** 1 VU / 검색 20건, 15 page + 5 refine |
 | 요청 trace | **확보:** 번호 성공, 2글자 사전 거절, 느린 본문 검색 성공 요청 |
-| 동일 규모 실행 계획 | **post-fix 단건 완료:** 명시적 사용자 허용으로 personal staging bounded plan 확보; pre-V97 plan은 없음 |
+| 동일 규모 실행 계획 | **변경 후 단건 측정 완료:** 별도 승인으로 개인 스테이징 실행계획 확보. V97 적용 전 계획은 미확보 |
 | 제품 변경 / 배포 / 개선 A/B | **완료:** PR #233·#234, exact SHA 배포, 고정 corpus 3회와 동일 topic 3회 비교 |
 | 첫 유용한 결과 시간·관련도 | **미측정:** 현재 k6는 HTTP 시간과 응답 종류만 평가 |
-| 다음 작업 | terminal-only/active-underfill 후보 비용 개선 검토; generator telemetry 후 본 부하; 검색 품질/TTFUR 검증 |
+| 다음 작업 | 종료 티켓만 검색하거나 활성 결과가 부족할 때의 비용 검토. 부하 발생기 지표 확보 후 본 부하, 검색 품질·TTFUR 검증 |
 
 원래 checkout은 `feature/staff-search-single-pass-count-page` / `1b91a47`이며 운영보다 오래되었다. 기존 dirty 파일은 E-002에 보존했다. reset/stash/덮어쓰기를 하지 않는다. 작업은 위 worktree에서 하고, 인계 문서는 요청된 원래 checkout의 `docs/tasks/`에도 동기화한다.
 
@@ -177,7 +175,7 @@ SQL이 목표를 달성하면 기존 API를 유지한다. 필요한 경우 계�
 - POST `/api/v1/agent/search-sessions/{id}/batches`: 불투명 cursor로 추가 배치.
 - DELETE `/api/v1/agent/search-sessions/{id}`: 남은 작업 취소.
 - 응답: 세션/배치 ID, 기본·관련 결과, 감사 event ID, 다음 cursor, 부분 여부, 진행/완료/일부 실패/취소/만료.
-- 초기 TTL 5분, actor와 로그인 세션에 귀속. 배치 재요청도 현재 권한·삭제 상태를 다시 확인한다.
+- 초기 TTL은 5분이며 요청한 actor와 로그인 세션에서만 사용한다. 배치 재요청도 현재 권한과 삭제 여부를 다시 확인한다.
 - 민감한 결과 배치는 감사 commit 이후 반환한다. 결과 없는 상태 polling을 TICKET_VIEWED나 중복 의미의 SEARCH_EXECUTED로 기록하지 않는다.
 - 내부 후보 한도 도달을 전체 검색 완료로 표시하지 않는다. 원문이 필요한 비동기 상태는 보호된 단기 데이터로 관리하고 감사 보존 정책과 분리한다.
 
@@ -207,7 +205,7 @@ case별 허용된 정답 ID와 0~3 관련도 등급을 보호된 자료로 만�
 
 TTFUR은 판정된 유용한 결과가 화면에서 사용 가능해질 때 종료한다. HTTP 200·빈 부분 응답·spinner 해제·422는 종료 조건이 아니다. timeout/중단/미제공을 분모에서 빼지 않는다. 실패 때문에 목표 percentile을 충족할 수 없으면 SLO 실패로 기록한다. 실제 무결과는 별도의 정확한 무결과 완료 지표로 평가한다.
 
-percentile 주장은 분류별 최소 200회 관측과 3회 반복을 확보한다. 현재 20건은 진단 smoke다. warm/cold, 표본 수, 실패율을 함께 기록한다.
+분류별 percentile 비교에는 최소 200회 샘플과 3회 반복을 사용한다. 현재 20건은 진단용 smoke 결과다. 캐시 상태(warm/cold), 샘플 수와 실패율을 함께 기록한다.
 
 ## 8. 실제 서버 실행·증거 수집 절차
 
@@ -348,16 +346,16 @@ UI 변경은 target Staff Console documentation MCP를 먼저 사용하고 focus
 | PR #233 | 593.333 / 3384.772 / 3545.194ms | 455.468 / 1186.265 / 1286.029ms | broad tail 재현, 완전한 해결 아님 |
 | PR #234 | 603.689 / 494.915 / 402.265ms | 426.251 / 416.726 / 398.445ms | 3초 tail 미재현, bounded candidate 채택 |
 
-동일 protected `topic:3`은 PR #233에서 4166.014ms였고 Tempo PAGE 3814.715ms였다. PR #234 뒤 세 번은 49.899/49.748/47.876ms였다. 상세 확인한 두 trace의 PAGE는 9.55/7.31ms였다. 한 pre 표본 대비 단건 HTTP 감소율 98.8%는 percentile이나 capacity 개선율이 아니다.
+동일한 보호 자료의 `topic:3` 요청은 PR #233에서 HTTP 4166.014ms, Tempo PAGE 3814.715ms였다. PR #234 배포 뒤 HTTP 3회는 49.899/49.748/47.876ms였고, 상세 확인한 두 trace의 PAGE는 9.55/7.31ms였다. 변경 전 1회와 변경 후 3회의 특정 요청 비교이며, 변경 전 1회 대비 HTTP 감소율은 98.8%다. percentile과 처리량은 별도 반복·부하 측정이 필요하다.
 
 ### 원인 판정
 
-- **관측 사실:** 이전 느린 요청은 대부분 PAGE에서 소요됐다. Hikari 대기/timeout, 필수 감사 실패, GC, response assembly가 같은 요청의 주원인은 아니었다.
-- **원인 후보:** broad literal substring 결과를 최신순으로 반환할 때 order-compatible 접근 경로가 없어 후보 검사·heap read·정렬 비용이 커졌다.
+- **지연 구간:** 느린 요청은 대부분 PAGE 처리에 시간을 썼다. 같은 요청의 Hikari 커넥션 대기·timeout, 필수 감사 실패, GC와 응답 조립에서는 주된 지연이 확인되지 않았다.
+- **원인 후보:** 넓은 범위의 부분문자열 검색을 최신순으로 반환할 인덱스가 없어 후보 검사·heap 읽기·정렬 비용이 커진 것으로 봤다.
 - **확인된 원인 범위:** PR #233과 PR #234 사이의 유일한 runtime 변경은 latest-first B-tree다. 같은 코드/데이터/입력의 3회 corpus와 3회 동일 topic에서 tail이 제거됐고 pgss post-window는 46 broad calls/총 6215.464ms, 추가 temp writes 0이었다. 따라서 **최신순 접근 경로 부재가 이번 재현 지연에 기여했고 V97이 이를 해결했다**고 판정한다.
 - **확인된 현재 executor:** E-046에서 V97 이후 기본 최신순 경로가 `tickets_staff_search_latest_idx` Index Only Scan → projection PK probe를 사용했다. Sort node와 temp I/O는 없었다. 같은 protected `topic:3` active plan은 최신순 티켓 176개를 검사해 26개를 얻었고 warm execution은 4.652ms였다.
 - **추가 원인 후보:** terminal-only 진단은 같은 26개를 얻기 위해 11,609개 티켓과 terminal projection PK를 확인했고 warm execution은 33.553ms였다. 해당 입력은 active가 page를 채워 실제 application에서 terminal을 호출하지 않지만, terminal-only 또는 active-underfill 검색은 후속 최적화 대상이다.
-- **확정 불가:** V97 이전의 exact executor plan은 당시 수집하지 않아 소급 복원할 수 없다. projection heap/TOAST 접근은 `pg_statio` delta로 확인했지만 substring CPU와 detoast CPU의 개별 ms는 PostgreSQL executor node가 분리하지 않아 확정할 수 없다.
+- **추가로 필요한 자료:** V97 적용 전 실행계획은 당시 수집하지 못했다. 검색 테이블의 heap/TOAST 접근은 `pg_statio` 차이로 확인했지만, 부분문자열 검사와 TOAST 해제에 각각 걸린 CPU 시간은 executor node에서 분리해 제공하지 않아 확인하지 못했다.
 
 ### Grafana와 회복
 
@@ -369,7 +367,7 @@ UI 변경은 target Staff Console documentation MCP를 먼저 사용하고 focus
 
 ### 남은 작업과 중단 범위
 
-- generator telemetry가 없으므로 1→5→10 req/s 본 부하는 실행하지 않았다. 이 공백을 0 또는 정상으로 해석하지 않는다.
+- 부하 발생기의 CPU·메모리·네트워크 지표가 없어 1→5→10 req/s 본 부하는 실행하지 않았다. 이 지표와 부하 결과는 미확인 상태다.
 - 최소 200회 분류별 percentile, 브라우저 TTFUR, Success@20/nDCG@10, 권한·삭제 실패 주입은 미검증이다. 동일 규모 executor plan은 post-fix 단건만 확보했고 pre-fix plan은 없다.
 - 제품 쿼리·인덱스·pool의 추가 변경은 하지 않았다. 현재 채택 후보는 personal staging에 배포돼 있다.
 - 상세 실행·query·trace·제약은 evidence root의 E-033~E-046과 `comparison.md`에 있다.

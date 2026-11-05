@@ -1,6 +1,6 @@
-# Implementation Decision Register
+# 구현 결정 기록
 
-This is a concise checklist for the owner and Codex. Accepted ADRs contain the rationale.
+개발 작업에서 참고할 결정 ID와 재검토 조건을 정리했습니다. 각 결정의 문제 상황, 대안과 선택 이유는 Accepted ADR에서 확인합니다.
 
 | ID | Decision | Status | Revisit trigger |
 |---|---|---|---|
@@ -78,25 +78,12 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-070 | Decimal-integer staff search is exact ticket-number lookup; Staff Console defaults to latest-first and the updated-time SQL path omits relevance scoring while score order remains explicit opt-in | accepted | measured latest-first latency still misses the user goal, numeric text-reference search is required, or relevance-quality evidence requires a different default; ADR 0053 |
 | D-071 | Latest-first staff search adds an unfiltered `(updated_at desc, ticket_number desc) include (id)` ticket index as a measured PostgreSQL planner option while preserving trigram matching, membership, cursor, permission, timeout and audit contracts | accepted | exact-SHA personal-staging evidence rejects the path, write/storage cost is unacceptable, or a later progressive-search contract supersedes it; ADR 0054 |
 
-D-049는 새 receipt row/table이나 comment raw/full-payload hash를 추가하지 않고 canonical ticket-audit retention을 그대로 따른다.
-IDEM-002의 409/no-mutation 하위 조건은 구현하지만 rejected reuse attempt 자체의 requestId/security-event durable linkage는 아직 없다.
-원 receipt의 actor/command ID는 추적 가능하나 gate 전체 평가는 `LIMITED`이며 별도 audit 요구가 승인될 때 재검토한다.
+D-049는 별도 처리 결과 테이블이나 댓글 원문·전체 요청 해시를 추가하지 않고 기존 티켓 감사 기록과 보존 기간을 사용합니다. IDEM-002의 409 응답과 중복 변경 방지는 구현했습니다. 원래 요청의 actor/command ID는 확인할 수 있지만, 거부된 ID 재사용 요청의 request ID는 별도 보안 이벤트로 남기지 않습니다. 이 연결을 추적하는 검증이 남아 있어 전체 평가는 `LIMITED`이며, 별도 감사 요구가 승인되면 다시 검토합니다.
 
-D-050의 `X-Deskseed-Expected-Staff-Id`는 optional defense-in-depth header다. 일반 staff read/CSRF/write는
-한 logical operation 시작 시 confirmed actor와 generation을 한 번 snapshot해 끝까지 사용한다. 로그인 CSRF/POST와
-post-login `/me` verification은 새 identity를 아직 확인하지 않았으므로 생략한다. 서버는 session principal을 먼저
-검증하고 header가 있으면 canonical UUID·동일 actor인지 activity 갱신과 controller 실행 전에 비교한다. mismatch는
-server session이나 다른 탭 owner marker를 폐기하지 않고 stale tab UI만 fail-closed한다. 구현된 `staffSession`
-operation은 OpenAPI에 standard header parameter와 `400 /problems/invalid-staff-session-actor`,
-`409 /problems/staff-session-actor-mismatch`를 직접 노출한다. blueprint-only operation은 policy extension을 따르되
-구현 계약을 동결할 때 같은 operation-level binding을 추가한다.
+D-050의 `X-Deskseed-Expected-Staff-Id`는 선택적으로 보내는 추가 확인 헤더입니다. 일반 직원 조회·CSRF·변경 요청은 한 작업을 시작할 때 확인한 actor와 generation을 끝까지 사용합니다. 로그인 CSRF·POST와 로그인 직후 `/me` 확인은 새 계정을 아직 확인하는 단계이므로 헤더를 생략합니다.
+
+서버는 세션 사용자를 먼저 검증합니다. 헤더가 있으면 활동 시각 갱신과 controller 실행 전에 UUID 형식과 세션 사용자 일치를 확인합니다. 불일치 시 해당 탭의 작업을 중단하고 서버 세션이나 다른 탭의 사용자 표시는 유지합니다. 구현된 `staffSession` 작업은 OpenAPI에 헤더와 `400 /problems/invalid-staff-session-actor`, `409 /problems/staff-session-actor-mismatch`를 직접 정의합니다. 설계 단계 작업은 policy extension을 따르고 구현 계약을 확정할 때 같은 항목을 추가합니다.
 
 ## How to use this register
 
-Before a Codex task:
-
-1. list the decision IDs it relies on;
-2. state whether it changes any decision;
-3. if yes, create/update ADR before code;
-4. include verification gate IDs;
-5. record the final decision and evidence in the PR.
+작업을 시작할 때 참고하는 결정 ID와 변경 여부를 적습니다. 결정을 바꾼다면 코드보다 먼저 ADR을 작성·수정하고 검증 gate ID를 정합니다. 최종 결정과 검증 결과는 PR에 남깁니다.
