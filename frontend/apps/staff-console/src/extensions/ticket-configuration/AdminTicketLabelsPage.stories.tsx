@@ -200,6 +200,12 @@ export const UnknownCreateRequiresListReview: Story = {
     await expect(
       drawer.getByRole('button', { name: '설정 저장' }),
     ).toBeDisabled()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '최신 목록 확인' }),
+    )
+    await expect(await canvas.findByText('목록 확인 완료')).toBeVisible()
+    await expect(canvas.getByLabelText(/식별 이름/)).toHaveValue('refund')
+    await expect(canvas.getByLabelText(/상담사 표시 이름/)).toHaveValue('환불')
   },
 }
 export const Empty: Story = {
@@ -259,5 +265,45 @@ export const Error: Story = {
   },
   play: async ({ canvas }) => {
     await canvas.findByText('목록을 불러오지 못했습니다.')
+  },
+}
+
+export const FilterAndPreserveDraft: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByRole('button', { name: '환불 요청 편집' })
+    await userEvent.type(canvas.getByLabelText('태그 검색'), '다른 항목')
+    await expect(canvas.getByText('조건에 맞는 항목이 없습니다.')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '검색 초기화' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: '환불 요청 편집' }),
+    )
+    await userEvent.type(canvas.getByLabelText(/상담사 표시 이름/), ' 수정')
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(canvas.getByRole('button', { name: '계속 편집' }))
+    await expect(canvas.getByLabelText(/상담사 표시 이름/)).toHaveValue(
+      '환불 요청 수정',
+    )
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(canvas.getByRole('button', { name: '변경 버리기' }))
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('button', { name: '환불 요청 편집' }),
+      ).toHaveFocus(),
+    )
+  },
+}
+export const StatusPhaseFilter: Story = {
+  args: { kind: 'statuses' },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('button', { name: '고객 확인 대기 편집' })
+    await userEvent.selectOptions(
+      canvas.getByLabelText('처리 단계 필터'),
+      'OPEN',
+    )
+    await expect(canvas.getByText('조건에 맞는 항목이 없습니다.')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '검색 초기화' }))
+    await expect(
+      canvas.getByRole('button', { name: '고객 확인 대기 편집' }),
+    ).toBeVisible()
   },
 }

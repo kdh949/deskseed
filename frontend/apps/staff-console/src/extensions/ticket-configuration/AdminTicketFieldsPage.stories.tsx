@@ -212,3 +212,31 @@ export const Loading: Story = {
     },
   },
 }
+
+export const SearchAndDraftExit: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByRole('button', { name: '편집: 주문번호' })
+    await userEvent.type(canvas.getByLabelText('필드 검색'), '없는 필드')
+    await expect(canvas.getByText('조건에 맞는 필드가 없습니다.')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '검색 초기화' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: '편집: 주문번호' }),
+    )
+    await expect(
+      canvas.getByRole('heading', { name: '주문번호 편집' }),
+    ).toHaveFocus()
+    await userEvent.type(canvas.getByLabelText(/직원 표시 이름/), ' 수정')
+    await userEvent.click(canvas.getByRole('button', { name: '편집 닫기' }))
+    await userEvent.click(canvas.getByRole('button', { name: '계속 편집' }))
+    await expect(canvas.getByLabelText(/직원 표시 이름/)).toHaveValue(
+      '주문번호 수정',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '편집 닫기' }))
+    await userEvent.click(canvas.getByRole('button', { name: '변경 버리기' }))
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('button', { name: '편집: 주문번호' }),
+      ).toHaveFocus(),
+    )
+  },
+}

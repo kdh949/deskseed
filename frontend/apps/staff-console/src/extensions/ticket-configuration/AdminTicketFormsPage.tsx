@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   SeedButton,
@@ -7,7 +7,9 @@ import {
   SeedTextField,
   SeedFeedbackState,
   SeedSkeletonRows,
+  SeedDrawer,
 } from '../../design-system/canonical'
+import { AdminTicketFormPreview } from './AdminTicketFormPreview'
 import { ConfigurationError } from './AdminTicketFieldsPage'
 import {
   listFields,
@@ -21,6 +23,7 @@ import {
   type FormRule,
   type TicketForm,
 } from './api'
+import { useAdminDraftExit } from '../../features/admin/useAdminDraftExit'
 import './configuration.css'
 
 const EMPTY_FORM: FormDraft = {
@@ -46,6 +49,22 @@ export function AdminTicketFormsPage() {
     retry: false,
   })
   const [editing, setEditing] = useState<TicketForm | 'new' | null>(null)
+  const [preview, setPreview] = useState<TicketForm | null>(null)
+  const trigger = useRef<HTMLButtonElement | null>(null)
+  const [search, setSearch] = useState('')
+  const [state, setState] = useState('all')
+  const shown =
+    forms.data?.filter(
+      (form) =>
+        form.name.toLowerCase().includes(search.trim().toLowerCase()) &&
+        (state === 'all' || form.lifecycle === state),
+    ) ?? []
+  const close = () => {
+    setEditing(null)
+    setPreview(null)
+    requestAnimationFrame(() => trigger.current?.focus())
+  }
+
   const transition = useMutation({
     mutationFn: ({
       form,
@@ -58,77 +77,153 @@ export function AdminTicketFormsPage() {
       client.invalidateQueries({ queryKey: ['admin-ticket-forms'] }),
   })
   return (
-    <section className="configuration-page">
-      <header>
+    <main className="configuration-page">
+      <header className="configuration-header">
         <h1>티켓 폼</h1>
         <p>
           필드와 조건을 설정하고 발행하세요. 수정한 초안은 다시 발행하기 전까지
           접수에 적용되지 않습니다.
         </p>
       </header>
-      <div className="configuration-actions">
-        <SeedButton
-          disabled={!fields.data?.some((f) => f.active)}
-          onClick={() => setEditing('new')}
-        >
-          폼 만들기
-        </SeedButton>
-        <SeedButton
-          onClick={() => {
-            void forms.refetch()
-            void fields.refetch()
-          }}
-        >
-          목록 새로고침
-        </SeedButton>
+      <div
+        className="configuration-overview"
+        hidden={Boolean(editing || preview)}
+      >
+        <div className="configuration-actions">
+          <SeedButton
+            disabled={!fields.data?.some((f) => f.active)}
+            onClick={(event) => {
+              trigger.current = event.currentTarget
+              setEditing('new')
+            }}
+          >
+            폼 만들기
+          </SeedButton>
+          <SeedButton
+            onClick={() => {
+              void forms.refetch()
+              void fields.refetch()
+            }}
+          >
+            목록 새로고침
+          </SeedButton>
+        </div>
+        <div className="configuration-toolbar">
+          <SeedTextField
+            label="폼 검색"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <SeedSelectField
+            label="발행 상태"
+            value={state}
+            onChange={(event) => setState(event.target.value)}
+          >
+            <option value="all">전체</option>
+            {Object.entries(LIFECYCLE).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </SeedSelectField>
+          <SeedButton
+            onClick={() => {
+              setSearch('')
+              setState('all')
+            }}
+          >
+            검색 초기화
+          </SeedButton>
+        </div>
+        {forms.isSuccess && (
+          <p role="status">
+            불러온 {forms.data.length}개 중 {shown.length}개
+          </p>
+        )}
+        <ConfigurationError
+          error={forms.error || fields.error || transition.error}
+        />
+        {forms.isPending || fields.isPending ? (
+          <SeedSkeletonRows />
+        ) : (
+          <ul className="configuration-list">
+            {shown.map((form) => (
+              <li key={form.id}>
+                <div>
+                  <strong>{form.name}</strong>
+                  <p>
+                    {LIFECYCLE[form.lifecycle]} · 설정 버전 {form.version}
+                    {form.defaultForCustomer
+                      ? ' · 고객 기본 폼'
+                      : ' · 고객 기본 아님'}
+                    {form.defaultForAgent
+                      ? ' · 상담사 기본 폼'
+                      : ' · 상담사 기본 아님'}
+                  </p>
+                </div>
+                <div className="configuration-actions">
+                  <SeedButton
+                    onClick={(event) => {
+                      trigger.current = event.currentTarget
+                      setEditing(form)
+                    }}
+                  >
+                    편집: {form.name}
+                  </SeedButton>
+                  <SeedButton
+                    disabled={form.lifecycle === 'ARCHIVED'}
+                    onClick={(event) => {
+                      trigger.current = event.currentTarget
+                      setPreview(form)
+                    }}
+                  >
+                    저장본 미리보기: {form.name}
+                  </SeedButton>
+                  <SeedButton
+                    disabled={
+                      transition.isPending || form.lifecycle === 'ARCHIVED'
+                    }
+                    onClick={() =>
+                      transition.mutate({ form, action: 'publish' })
+                    }
+                  >
+                    발행: {form.name}
+                  </SeedButton>
+                  <SeedButton
+                    disabled={
+                      transition.isPending || form.lifecycle === 'ARCHIVED'
+                    }
+                    onClick={() =>
+                      transition.mutate({ form, action: 'archive' })
+                    }
+                  >
+                    보관: {form.name}
+                  </SeedButton>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {forms.data?.length === 0 && (
+          <SeedFeedbackState
+            kind="empty"
+            title="등록된 폼이 없습니다."
+            description="필드를 먼저 만든 후 고객 또는 상담사 기본 폼을 설정하세요."
+          />
+        )}
+        {forms.isSuccess && forms.data.length > 0 && !shown.length && (
+          <SeedFeedbackState
+            kind="empty"
+            title="조건에 맞는 폼이 없습니다."
+            description="검색어나 발행 상태를 바꿔 주세요."
+          />
+        )}
       </div>
-      <ConfigurationError
-        error={forms.error || fields.error || transition.error}
-      />
-      {forms.isPending || fields.isPending ? (
-        <SeedSkeletonRows />
-      ) : (
-        <ul className="configuration-list">
-          {forms.data?.map((form) => (
-            <li key={form.id}>
-              <div>
-                <strong>{form.name}</strong>
-                <p>
-                  {LIFECYCLE[form.lifecycle]} · 버전 {form.version}
-                  {form.defaultForCustomer ? ' · 고객 기본 폼' : ''}
-                  {form.defaultForAgent ? ' · 상담사 기본 폼' : ''}
-                </p>
-              </div>
-              <div className="configuration-actions">
-                <SeedButton onClick={() => setEditing(form)}>
-                  편집: {form.name}
-                </SeedButton>
-                <SeedButton
-                  disabled={
-                    transition.isPending || form.lifecycle === 'ARCHIVED'
-                  }
-                  onClick={() => transition.mutate({ form, action: 'publish' })}
-                >
-                  발행: {form.name}
-                </SeedButton>
-                <SeedButton
-                  disabled={
-                    transition.isPending || form.lifecycle === 'ARCHIVED'
-                  }
-                  onClick={() => transition.mutate({ form, action: 'archive' })}
-                >
-                  보관: {form.name}
-                </SeedButton>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {forms.data?.length === 0 && (
-        <SeedFeedbackState
-          kind="empty"
-          title="등록된 폼이 없습니다."
-          description="필드를 먼저 만든 후 고객 또는 상담사 기본 폼을 설정하세요."
+      {preview && (
+        <AdminTicketFormPreview
+          key={preview.id}
+          form={preview}
+          onClose={close}
         />
       )}
       {editing && fields.data && (
@@ -136,10 +231,10 @@ export function AdminTicketFormsPage() {
           key={editing === 'new' ? 'new' : editing.id}
           fields={fields.data}
           existing={editing === 'new' ? undefined : editing}
-          onClose={() => setEditing(null)}
+          onClose={close}
         />
       )}
-    </section>
+    </main>
   )
 }
 
@@ -154,6 +249,7 @@ function FormEditor({
 }) {
   const client = useQueryClient()
   const [draft, setDraft] = useState<FormDraft>(existing ?? EMPTY_FORM)
+  const [conditionDirty, setConditionDirty] = useState(false)
   const save = useMutation({
     mutationFn: () => saveForm(draft, existing),
     onSuccess: async () => {
@@ -161,12 +257,22 @@ function FormEditor({
       onClose()
     },
   })
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    heading.current?.focus()
+  }, [])
+  const exit = useAdminDraftExit(
+    conditionDirty ||
+      JSON.stringify(draft) !== JSON.stringify(existing ?? EMPTY_FORM),
+    save.isPending,
+  )
   const selected = fields.filter((f) =>
     draft.placements.some((p) => p.fieldId === f.id),
   )
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (draft.placements.length && !save.isPending) save.mutate()
+    if (draft.placements.length && !conditionDirty && !save.isPending)
+      save.mutate()
   }
   const toggleField = (field: FieldDefinition, checked: boolean) =>
     setDraft((current) => ({
@@ -221,7 +327,9 @@ function FormEditor({
       onSubmit={submit}
       aria-label="폼 편집"
     >
-      <h2>{existing ? `${existing.name} 편집` : '새 폼'}</h2>
+      <h2 ref={heading} tabIndex={-1}>
+        {existing ? `${existing.name} 편집` : '새 폼'}
+      </h2>
       <ConfigurationError error={save.error} />
       <fieldset disabled={save.isPending || existing?.lifecycle === 'ARCHIVED'}>
         <legend>접수 폼 설정</legend>
@@ -328,6 +436,7 @@ function FormEditor({
         </ol>
         <RuleEditor
           fields={selected}
+          onDraftChange={setConditionDirty}
           onAdd={(rule) =>
             setDraft({
               ...draft,
@@ -349,15 +458,29 @@ function FormEditor({
           <SeedButton
             type="submit"
             variant="primary"
-            disabled={!draft.placements.length}
+            disabled={!draft.placements.length || conditionDirty}
           >
             {save.isPending ? '저장 중…' : '폼 초안 저장'}
           </SeedButton>
         </div>
       </fieldset>
-      <SeedButton disabled={save.isPending} onClick={onClose}>
+      <SeedButton
+        disabled={save.isPending}
+        onClick={() => exit.request(onClose)}
+      >
         편집 닫기
       </SeedButton>
+      <SeedDrawer
+        open={exit.open}
+        onClose={exit.cancel}
+        title="작성한 내용을 버릴까요?"
+      >
+        <p>저장하지 않은 폼 변경 사항이 있습니다.</p>
+        <SeedButton onClick={exit.cancel}>계속 편집</SeedButton>
+        <SeedButton disabled={save.isPending} onClick={exit.discard}>
+          변경 버리기
+        </SeedButton>
+      </SeedDrawer>
     </form>
   )
 }
@@ -379,14 +502,24 @@ function ruleLabel(rule: FormRule, fields: FieldDefinition[]) {
 function RuleEditor({
   fields,
   onAdd,
+  onDraftChange,
 }: {
   fields: FieldDefinition[]
   onAdd: (rule: FormRule) => void
+  onDraftChange: (dirty: boolean) => void
 }) {
   const [source, setSource] = useState('')
   const [value, setValue] = useState('')
   const [target, setTarget] = useState('')
   const [behavior, setBehavior] = useState('REQUIRED')
+  const dirty = Boolean(source || value || target || behavior !== 'REQUIRED')
+  useEffect(() => onDraftChange(dirty), [dirty, onDraftChange])
+  const reset = () => {
+    setSource('')
+    setValue('')
+    setTarget('')
+    setBehavior('REQUIRED')
+  }
   const field = fields.find((f) => f.id === source)
   const options = useQuery({
     queryKey: ['ticket-field-options', source],
@@ -488,7 +621,7 @@ function RuleEditor({
       <SeedButton
         disabled={!canAdd}
         onClick={() => {
-          if (canAdd)
+          if (canAdd) {
             onAdd({
               id: crypto.randomUUID(),
               priority: 0,
@@ -503,10 +636,18 @@ function RuleEditor({
               },
               effects: [{ fieldId: target, behavior }],
             })
+            reset()
+          }
         }}
       >
         조건 추가
       </SeedButton>
+      {dirty && (
+        <>
+          <p>작성 중인 조건을 추가하거나 지운 뒤 폼을 저장하세요.</p>
+          <SeedButton onClick={reset}>작성 중인 조건 지우기</SeedButton>
+        </>
+      )}
     </fieldset>
   )
 }

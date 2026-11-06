@@ -79,3 +79,54 @@
   min-width: 0;
   max-width: 100%;
 }
+
+.configuration-overview:not([hidden]),
+.configuration-preview {
+  display: grid;
+  gap: var(--ds-space-200);
+  min-width: 0;
+}
+.configuration-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--ds-space-150);
+}
+.configuration-toolbar > * {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.configuration-toolbar > button {
+  flex: 0 0 auto;
+}
+.configuration-preview-field {
+  display: grid;
+  gap: var(--ds-space-050);
+}
+.configuration-preview-field > p {
+  color: var(--ds-palette-ink-muted);
+}
+.configuration-editor h2:focus-visible,
+.configuration-preview h2:focus-visible {
+  outline: var(--ds-focus-ring-width) solid var(--ds-border-focus);
+  outline-offset: var(--ds-space-050);
+}
+
+.configuration-header > button {
+  justify-self: start;
+}
+
+.configuration-preview > button,
+.configuration-editor > button {
+  justify-self: start;
+}
+.configuration-preview .configuration-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .configuration-preview .configuration-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
