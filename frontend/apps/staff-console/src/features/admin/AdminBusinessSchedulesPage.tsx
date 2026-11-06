@@ -7,6 +7,7 @@ import {
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -32,10 +33,12 @@ import type {
 } from '../../api/types'
 import {
   DsButton,
+  DsDrawer,
   Notification,
   RetryButton,
   ScreenState,
 } from '../../design-system'
+import { useAdminDraftExit } from './useAdminDraftExit'
 import { recoverAmbiguousAdminMutationOutcome } from './adminMutationRecovery'
 
 const WEEKDAYS: Array<{ label: string; value: BusinessWeekday }> = [
@@ -96,6 +99,9 @@ export function AdminBusinessSchedulesPage() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [draft, setDraft] =
     useState<BusinessScheduleDefinition>(blankDefinition)
+  const [draftBaseline, setDraftBaseline] =
+    useState<BusinessScheduleDefinition>(blankDefinition)
+  const editorRef = useRef<HTMLElement>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveOutcomeUnknown, setSaveOutcomeUnknown] = useState(false)
   const [previewStart, setPreviewStart] = useState('')
@@ -141,6 +147,7 @@ export function AdminBusinessSchedulesPage() {
       setSelectedSchedule(schedule)
       setSelectedVersionNumber(schedule.version)
       setDraft(copyDefinition(schedule))
+      setDraftBaseline(copyDefinition(schedule))
       setSaveError(null)
       setSaveOutcomeUnknown(false)
       await refresh()
@@ -172,6 +179,15 @@ export function AdminBusinessSchedulesPage() {
       await refresh()
     },
   })
+
+  const dirty =
+    editorOpen && JSON.stringify(draft) !== JSON.stringify(draftBaseline)
+  const busy = saveMutation.isPending || activateMutation.isPending
+  const exit = useAdminDraftExit(dirty, busy)
+  useEffect(() => {
+    if (editorOpen)
+      editorRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+  }, [editorOpen])
 
   useEffect(() => {
     if (!selectedSchedule) return
@@ -234,7 +250,7 @@ export function AdminBusinessSchedulesPage() {
     event.preventDefault()
     if (saveOutcomeUnknown) return
     if (!draft.name.trim() || !draft.timeZone.trim()) {
-      setSaveError('시간표 이름과 IANA timezone을 입력해 주세요.')
+      setSaveError('시간표 이름과 시간대(예: Asia/Seoul)를 입력해 주세요.')
       return
     }
     if (
@@ -267,6 +283,7 @@ export function AdminBusinessSchedulesPage() {
     setSelectedSchedule(null)
     setSelectedVersionNumber(null)
     setDraft(blankDefinition())
+    setDraftBaseline(blankDefinition())
     setEditorOpen(true)
     setSaveError(null)
     setSaveOutcomeUnknown(false)
@@ -277,6 +294,7 @@ export function AdminBusinessSchedulesPage() {
     if (!selectedVersion) return
     if (saveOutcomeUnknown) return
     setDraft(copyDefinition(selectedVersion))
+    setDraftBaseline(copyDefinition(selectedVersion))
     setEditorOpen(true)
     setSaveError(null)
     setSaveOutcomeUnknown(false)
@@ -295,14 +313,14 @@ export function AdminBusinessSchedulesPage() {
         <div>
           <h1>영업 시간표</h1>
           <p>
-            timezone, 평일 다중 시간 구간, 휴일 및 예외 일정을 immutable
-            version으로 관리합니다.
+            시간대, 요일별 영업시간, 휴일과 예외 일정을 버전별로 관리합니다. 새
+            버전 저장과 활성화는 별도 작업입니다.
           </p>
         </div>
         <div className="admin-inline-actions">
           <DsButton
             disabled={saveOutcomeUnknown}
-            onClick={openNewSchedule}
+            onClick={() => exit.request(openNewSchedule)}
             tone="primary"
           >
             새 영업 시간표
@@ -335,9 +353,9 @@ export function AdminBusinessSchedulesPage() {
               <thead>
                 <tr>
                   <th scope="col">이름</th>
-                  <th scope="col">timezone</th>
-                  <th scope="col">최신 version</th>
-                  <th scope="col">활성 version</th>
+                  <th scope="col">시간대</th>
+                  <th scope="col">최신 버전</th>
+                  <th scope="col">활성 버전</th>
                   <th scope="col">상태</th>
                   <th scope="col">작업</th>
                 </tr>
@@ -353,12 +371,14 @@ export function AdminBusinessSchedulesPage() {
                     <td>
                       <DsButton
                         aria-expanded={selectedSchedule?.id === schedule.id}
-                        onClick={() => {
-                          setSelectedSchedule(schedule)
-                          setSelectedVersionNumber(schedule.version)
-                          closeEditor()
-                          setActivationOpen(false)
-                        }}
+                        onClick={() =>
+                          exit.request(() => {
+                            setSelectedSchedule(schedule)
+                            setSelectedVersionNumber(schedule.version)
+                            closeEditor()
+                            setActivationOpen(false)
+                          })
+                        }
                         tone="secondary"
                       >
                         시간표 관리
@@ -380,18 +400,23 @@ export function AdminBusinessSchedulesPage() {
           <div className="admin-page-header">
             <div>
               <h2 id="schedule-detail-heading">{selectedSchedule.name}</h2>
-              <p>{`${selectedSchedule.timeZone} · aggregate version ${selectedSchedule.aggregateVersion}`}</p>
+              <p>{`${selectedSchedule.timeZone} · 설정 변경 번호 ${selectedSchedule.aggregateVersion}`}</p>
             </div>
             <div className="admin-inline-actions">
               <DsButton
                 disabled={versionsQuery.isPending || saveOutcomeUnknown}
-                onClick={openNewVersion}
+                onClick={() => exit.request(openNewVersion)}
                 tone="primary"
               >
-                새 version 작성
+                새 버전 작성
               </DsButton>
               <DsButton
-                onClick={() => setSelectedSchedule(null)}
+                onClick={() =>
+                  exit.request(() => {
+                    setSelectedSchedule(null)
+                    closeEditor()
+                  })
+                }
                 tone="secondary"
               >
                 닫기
@@ -402,11 +427,11 @@ export function AdminBusinessSchedulesPage() {
             <ScreenState
               compact
               kind="loading"
-              title="시간표 version 이력을 불러오는 중"
+              title="시간표 버전 이력을 불러오는 중"
             />
           ) : versionsQuery.isError ? (
             <Notification
-              title="시간표 version 이력을 불러오지 못했습니다."
+              title="시간표 버전 이력을 불러오지 못했습니다."
               tone="danger"
             >
               <p>새로고침한 뒤 다시 시도해 주세요.</p>
@@ -415,13 +440,13 @@ export function AdminBusinessSchedulesPage() {
             <>
               <ul
                 className="admin-version-list"
-                aria-label="영업 시간표 version 이력"
+                aria-label="영업 시간표 버전 이력"
               >
                 {versionsQuery.data.map((version) => (
                   <li key={version.version}>
-                    <strong>{`version ${version.version}`}</strong>
+                    <strong>{`버전 ${version.version}`}</strong>
                     <span className="admin-muted">
-                      {version.active ? '현재 활성' : '비활성 version'}
+                      {version.active ? '현재 활성' : '비활성 버전'}
                     </span>
                     <span className="admin-muted">
                       {formatTimestamp(version.createdAt)}
@@ -433,7 +458,7 @@ export function AdminBusinessSchedulesPage() {
                       onClick={() => setSelectedVersionNumber(version.version)}
                       tone="secondary"
                     >
-                      이 version 검토
+                      이 버전 검토
                     </DsButton>
                   </li>
                 ))}
@@ -451,9 +476,9 @@ export function AdminBusinessSchedulesPage() {
                 <div
                   className="admin-confirmation"
                   role="group"
-                  aria-label="영업 시간표 version 활성화 최종 확인"
+                  aria-label="영업 시간표 버전 활성화 최종 확인"
                 >
-                  <p>{`version ${selectedVersion.version}을(를) 활성화할까요? 기존 SLA target의 시간표 snapshot은 변경하지 않습니다.`}</p>
+                  <p>{`버전 ${selectedVersion.version}을(를) 활성화할까요? 기존 응답 목표에 적용된 시간표는 변경하지 않습니다.`}</p>
                   <DsButton
                     disabled={activateMutation.isPending}
                     onClick={() =>
@@ -466,7 +491,7 @@ export function AdminBusinessSchedulesPage() {
                   >
                     {activateMutation.isPending
                       ? '활성화 중…'
-                      : 'version 활성화 확정'}
+                      : '버전 활성화 확정'}
                   </DsButton>
                   <DsButton
                     disabled={activateMutation.isPending}
@@ -477,13 +502,13 @@ export function AdminBusinessSchedulesPage() {
                   </DsButton>
                   {activateMutation.isError ? (
                     <ScheduleMutationNotification
-                      action="시간표 version을 활성화"
+                      action="시간표 버전을 활성화"
                       error={activateMutation.error}
                     />
                   ) : null}
                   {activateMutation.isSuccess ? (
                     <Notification
-                      title="시간표 version을 활성화했습니다."
+                      title="시간표 버전을 활성화했습니다."
                       tone="success"
                     />
                   ) : null}
@@ -497,155 +522,165 @@ export function AdminBusinessSchedulesPage() {
       {editorOpen ? (
         <section
           aria-labelledby="schedule-editor-heading"
+          ref={editorRef}
           className="admin-surface"
         >
           <div className="admin-page-header">
             <div>
               <h2 id="schedule-editor-heading">
                 {selectedSchedule
-                  ? `${selectedSchedule.name} 새 version`
+                  ? `${selectedSchedule.name} 새 버전`
                   : '새 영업 시간표'}
               </h2>
               <p>저장 전 미리보기는 입력을 저장하거나 활성화하지 않습니다.</p>
             </div>
-            <DsButton onClick={closeEditor} tone="secondary">
+            <DsButton
+              onClick={() => exit.request(closeEditor)}
+              tone="secondary"
+            >
               작성 닫기
             </DsButton>
           </div>
           <form className="admin-form" onSubmit={submitSchedule}>
-            <div className="admin-form-grid">
-              <label className="admin-field" htmlFor="schedule-name">
-                <span>시간표 이름</span>
-                <input
-                  id="schedule-name"
-                  maxLength={100}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
-                  value={draft.name}
-                />
-              </label>
-              <label className="admin-field" htmlFor="schedule-timezone">
-                <span>IANA timezone</span>
-                <input
-                  id="schedule-timezone"
-                  maxLength={100}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      timeZone: event.target.value,
-                    }))
-                  }
-                  value={draft.timeZone}
-                />
-              </label>
-            </div>
-            <fieldset className="admin-form">
-              <legend>주간 영업 시간</legend>
-              <div className="admin-weekday-list">
-                {draft.weekdays.map((weekday) => (
-                  <WeekdayEditor
-                    key={weekday.weekday}
-                    onChange={(next) =>
+            <fieldset
+              disabled={busy}
+              className="admin-form"
+              style={{ border: 0, margin: 0, padding: 0 }}
+            >
+              <div className="admin-form-grid">
+                <label className="admin-field" htmlFor="schedule-name">
+                  <span>시간표 이름</span>
+                  <input
+                    id="schedule-name"
+                    maxLength={100}
+                    onChange={(event) =>
                       setDraft((current) => ({
                         ...current,
-                        weekdays: current.weekdays.map((item) =>
-                          item.weekday === next.weekday ? next : item,
-                        ),
+                        name: event.target.value,
                       }))
                     }
-                    weekday={weekday}
+                    value={draft.name}
                   />
-                ))}
+                </label>
+                <label className="admin-field" htmlFor="schedule-timezone">
+                  <span>시간대</span>
+                  <input
+                    id="schedule-timezone"
+                    maxLength={100}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        timeZone: event.target.value,
+                      }))
+                    }
+                    value={draft.timeZone}
+                  />
+                </label>
               </div>
-            </fieldset>
-            <fieldset className="admin-form">
-              <legend>예외 일정</legend>
-              {draft.exceptions.length === 0 ? (
-                <p className="admin-muted">등록된 예외 일정이 없습니다.</p>
-              ) : (
+              <fieldset className="admin-form">
+                <legend>주간 영업 시간</legend>
                 <div className="admin-weekday-list">
-                  {draft.exceptions.map((exception, index) => (
-                    <ExceptionEditor
-                      exception={exception}
-                      key={`${exception.date}-${index}`}
+                  {draft.weekdays.map((weekday) => (
+                    <WeekdayEditor
+                      key={weekday.weekday}
                       onChange={(next) =>
                         setDraft((current) => ({
                           ...current,
-                          exceptions: current.exceptions.map(
-                            (item, itemIndex) =>
-                              itemIndex === index ? next : item,
+                          weekdays: current.weekdays.map((item) =>
+                            item.weekday === next.weekday ? next : item,
                           ),
                         }))
                       }
-                      onRemove={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          exceptions: current.exceptions.filter(
-                            (_, itemIndex) => itemIndex !== index,
-                          ),
-                        }))
-                      }
+                      weekday={weekday}
                     />
                   ))}
                 </div>
-              )}
-              <DsButton
-                onClick={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    exceptions: [...current.exceptions, blankException()],
-                  }))
-                }
-                tone="secondary"
-                type="button"
-              >
-                예외 일정 추가
-              </DsButton>
+              </fieldset>
+              <fieldset className="admin-form">
+                <legend>예외 일정</legend>
+                {draft.exceptions.length === 0 ? (
+                  <p className="admin-muted">등록된 예외 일정이 없습니다.</p>
+                ) : (
+                  <div className="admin-weekday-list">
+                    {draft.exceptions.map((exception, index) => (
+                      <ExceptionEditor
+                        exception={exception}
+                        key={`${exception.date}-${index}`}
+                        onChange={(next) =>
+                          setDraft((current) => ({
+                            ...current,
+                            exceptions: current.exceptions.map(
+                              (item, itemIndex) =>
+                                itemIndex === index ? next : item,
+                            ),
+                          }))
+                        }
+                        onRemove={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            exceptions: current.exceptions.filter(
+                              (_, itemIndex) => itemIndex !== index,
+                            ),
+                          }))
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+                <DsButton
+                  onClick={() =>
+                    setDraft((current) => ({
+                      ...current,
+                      exceptions: [...current.exceptions, blankException()],
+                    }))
+                  }
+                  tone="secondary"
+                  type="button"
+                >
+                  예외 일정 추가
+                </DsButton>
+              </fieldset>
+              {saveError ? (
+                <Notification title={saveError} tone="warning" />
+              ) : null}
+              {saveOutcomeUnknown ? (
+                <Notification
+                  title="시간표 저장 결과를 확인할 수 없습니다."
+                  tone="warning"
+                >
+                  <p>
+                    서버 응답이 유실되었을 수 있어 같은 요청을 다시 제출하지
+                    않습니다. 시간표 목록과 버전 이력을 다시 읽었습니다. 서버
+                    상태를 확인한 뒤 이 작성 화면을 닫고 다음 작업을 선택해
+                    주세요.
+                  </p>
+                </Notification>
+              ) : saveMutation.isError ? (
+                <ScheduleMutationNotification
+                  action="시간표를 저장"
+                  error={saveMutation.error}
+                />
+              ) : null}
+              {saveMutation.isSuccess ? (
+                <Notification
+                  title="시간표 버전을 저장했습니다."
+                  tone="success"
+                />
+              ) : null}
+              <div className="admin-form-actions">
+                <DsButton
+                  disabled={saveMutation.isPending || saveOutcomeUnknown}
+                  tone="primary"
+                  type="submit"
+                >
+                  {saveMutation.isPending
+                    ? '시간표 저장 중…'
+                    : selectedSchedule
+                      ? '새 버전 저장'
+                      : '시간표 생성'}
+                </DsButton>
+              </div>
             </fieldset>
-            {saveError ? (
-              <Notification title={saveError} tone="warning" />
-            ) : null}
-            {saveOutcomeUnknown ? (
-              <Notification
-                title="시간표 저장 결과를 확인할 수 없습니다."
-                tone="warning"
-              >
-                <p>
-                  서버 응답이 유실되었을 수 있어 같은 요청을 다시 제출하지
-                  않습니다. 시간표 목록과 version 이력을 다시 읽었습니다. 서버
-                  상태를 확인한 뒤 이 작성 화면을 닫고 다음 작업을 선택해
-                  주세요.
-                </p>
-              </Notification>
-            ) : saveMutation.isError ? (
-              <ScheduleMutationNotification
-                action="시간표를 저장"
-                error={saveMutation.error}
-              />
-            ) : null}
-            {saveMutation.isSuccess ? (
-              <Notification
-                title="시간표 version을 저장했습니다."
-                tone="success"
-              />
-            ) : null}
-            <div className="admin-form-actions">
-              <DsButton
-                disabled={saveMutation.isPending || saveOutcomeUnknown}
-                tone="primary"
-                type="submit"
-              >
-                {saveMutation.isPending
-                  ? '시간표 저장 중…'
-                  : selectedSchedule
-                    ? '새 version 저장'
-                    : '시간표 생성'}
-              </DsButton>
-            </div>
           </form>
 
           <SchedulePreview
@@ -660,6 +695,19 @@ export function AdminBusinessSchedulesPage() {
           />
         </section>
       ) : null}
+      <DsDrawer
+        open={exit.open}
+        onClose={exit.cancel}
+        title="저장하지 않은 시간표 변경"
+        description="변경을 저장하려면 계속 편집을 선택하세요. 요청 처리 중에는 닫을 수 없습니다."
+      >
+        <div className="admin-inline-actions">
+          <DsButton onClick={exit.cancel}>계속 편집</DsButton>
+          <DsButton disabled={busy} onClick={exit.discard}>
+            변경 버리기
+          </DsButton>
+        </div>
+      </DsDrawer>
     </main>
   )
 }
@@ -860,12 +908,12 @@ function ScheduleReadModel({
     >
       <div className="admin-page-header">
         <div>
-          <h3 id="schedule-version-review-heading">{`version ${schedule.version} 검토`}</h3>
+          <h3 id="schedule-version-review-heading">{`버전 ${schedule.version} 검토`}</h3>
           <p>{`${schedule.timeZone} · ${schedule.active ? '활성' : '비활성'}`}</p>
         </div>
         {showActivate ? (
           <DsButton onClick={onActivate} tone="primary">
-            이 version 활성화
+            이 버전 활성화
           </DsButton>
         ) : null}
       </div>
@@ -1055,7 +1103,7 @@ function ScheduleMutationNotification({
     >
       <p>
         {conflict
-          ? '작성 중인 시간표는 보존했습니다. 최신 version을 새로고침한 뒤 다시 검토해 주세요.'
+          ? '작성 중인 시간표는 보존했습니다. 최신 버전을 새로고침한 뒤 다시 검토해 주세요.'
           : '작성 중인 시간표는 보존했습니다. 서버 검증 오류를 확인한 뒤 다시 시도해 주세요.'}
       </p>
     </Notification>

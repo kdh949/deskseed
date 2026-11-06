@@ -1,3 +1,4 @@
+import { createMemoryRouter, RouterProvider } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -60,7 +61,11 @@ function renderPage() {
   return render(
     <DeskseedThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <AdminBusinessSchedulesPage />
+        <RouterProvider
+          router={createMemoryRouter([
+            { path: '/', element: <AdminBusinessSchedulesPage /> },
+          ])}
+        />
       </QueryClientProvider>
     </DeskseedThemeProvider>,
   )
@@ -105,27 +110,23 @@ describe('AdminBusinessSchedulesPage', () => {
 
     await user.click(await screen.findByRole('button', { name: '시간표 관리' }))
     await user.click(
-      await screen.findByRole('button', { name: '새 version 작성' }),
+      await screen.findByRole('button', { name: '새 버전 작성' }),
     )
     const name = await screen.findByLabelText('시간표 이름')
-    await user.click(screen.getByRole('button', { name: '새 version 저장' }))
+    await user.click(screen.getByRole('button', { name: '새 버전 저장' }))
 
     expect(
       await screen.findByText('시간표 저장 결과를 확인할 수 없습니다.'),
     ).toBeVisible()
     expect(name).toHaveValue(schedule.name)
-    expect(
-      screen.getByRole('button', { name: '새 version 저장' }),
-    ).toBeDisabled()
+    expect(screen.getByRole('button', { name: '새 버전 저장' })).toBeDisabled()
     await waitFor(() => {
       expect(scheduleReads).toBeGreaterThanOrEqual(2)
       expect(versionReads).toBeGreaterThanOrEqual(2)
     })
     await user.click(screen.getByRole('button', { name: '작성 닫기' }))
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: '새 version 작성' }),
-      ).toBeEnabled()
+      expect(screen.getByRole('button', { name: '새 버전 작성' })).toBeEnabled()
     })
   })
 })

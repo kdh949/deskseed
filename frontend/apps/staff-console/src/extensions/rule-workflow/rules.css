@@ -67,3 +67,9 @@
     padding: var(--ds-space-200);
   }
 }
+
+.rule-form > button,
+.rule-row > button,
+.rule-editor section > button {
+  justify-self: start;
+}

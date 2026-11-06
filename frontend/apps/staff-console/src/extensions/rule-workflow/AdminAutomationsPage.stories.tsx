@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http, HttpResponse } from 'msw'
-import { expect, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { AdminAutomationsPage } from './AdminAutomationsPage'
 import type { Automation } from './automation-api'
 const rule: Automation = {
@@ -171,11 +171,11 @@ export const CreatePreviewActivate: Story = {
       '7일 후 종료',
     )
     await userEvent.clear(
-      canvas.getByRole('spinbutton', { name: '해결 후 경과 시간 (분)' }),
+      canvas.getByRole('spinbutton', { name: '해결 후 경과 시간' }),
     )
     await userEvent.type(
-      canvas.getByRole('spinbutton', { name: '해결 후 경과 시간 (분)' }),
-      '10080',
+      canvas.getByRole('spinbutton', { name: '해결 후 경과 시간' }),
+      '7',
     )
     await userEvent.click(canvas.getByRole('button', { name: '초안 저장' }))
     await canvas.findByText('새 버전을 저장했습니다. 활성 버전은 유지됩니다.')
@@ -305,8 +305,8 @@ export const ReviewOlderVersionAndKeyboard: Story = {
     )
     await waitFor(() =>
       expect(
-        canvas.getByRole('spinbutton', { name: '해결 후 경과 시간 (분)' }),
-      ).toHaveValue(60),
+        canvas.getByRole('spinbutton', { name: '해결 후 경과 시간' }),
+      ).toHaveValue(1),
     )
     await expect(
       canvas.getByRole('heading', { name: '버전 1 미리보기' }),
@@ -356,10 +356,10 @@ export const ReopenedTicketDoesNotMatch: Story = {
       canvas.getByRole('button', { name: '버전 2 활성화' }),
     ).toBeEnabled()
     await userEvent.clear(
-      canvas.getByRole('spinbutton', { name: '해결 후 경과 시간 (분)' }),
+      canvas.getByRole('spinbutton', { name: '해결 후 경과 시간' }),
     )
     await userEvent.type(
-      canvas.getByRole('spinbutton', { name: '해결 후 경과 시간 (분)' }),
+      canvas.getByRole('spinbutton', { name: '해결 후 경과 시간' }),
       '60',
     )
     await expect(
@@ -422,5 +422,119 @@ export const Error: Story = {
     await expect(
       await canvas.findByText('요청 결과를 확인하지 못했습니다.'),
     ).toBeVisible()
+  },
+}
+
+export const UnsavedEscapeGuard: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByText(rule.name)
+    await userEvent.click(canvas.getByRole('button', { name: '자동화 만들기' }))
+    await userEvent.keyboard('{Escape}')
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: '자동화 만들기' }))
+    const name = canvas.getByRole('textbox', { name: '자동화 이름' })
+    await userEvent.click(name)
+    await userEvent.paste('보존할 자동화')
+    await userEvent.keyboard('{Escape}')
+    const confirmation = await canvas.findByRole('dialog', {
+      name: '저장하지 않은 자동화 변경',
+    })
+    await userEvent.click(
+      within(confirmation).getByRole('button', { name: '계속 편집' }),
+    )
+    await expect(name).toHaveValue('보존할 자동화')
+    await expect(name).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(canvas.getByRole('button', { name: '변경 버리기' }))
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+  },
+}
+
+export const DurationUnitPreservesMinutes: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByText(rule.name)
+    await userEvent.click(canvas.getByRole('button', { name: '자동화 만들기' }))
+    const amount = canvas.getByRole('spinbutton', { name: '해결 후 경과 시간' })
+    const unit = canvas.getByLabelText('시간 단위')
+    await expect(amount).toHaveValue(1)
+    await expect(unit).toHaveValue('DAYS')
+    await userEvent.selectOptions(unit, 'HOURS')
+    await expect(amount).toHaveValue(24)
+    await userEvent.selectOptions(unit, 'MINUTES')
+    await expect(amount).toHaveValue(1440)
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '61')
+    await userEvent.selectOptions(unit, 'HOURS')
+    await expect(canvas.getByRole('status')).toHaveTextContent(
+      '실제 경과 1시간 1분 · 61분',
+    )
+    await userEvent.selectOptions(unit, 'MINUTES')
+    await expect(amount).toHaveValue(61)
+    await userEvent.selectOptions(unit, 'HOURS')
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '1.001')
+    await expect(
+      canvas.getByRole('button', { name: '초안 저장' }),
+    ).toBeDisabled()
+    await expect(canvas.getByRole('status')).toHaveTextContent(
+      '분 단위로 환산되는 시간',
+    )
+  },
+}
+
+let completePendingSave: (() => void) | undefined
+export const SaveBlocksEditorExit: Story = {
+  beforeEach: () => {
+    completePendingSave = undefined
+  },
+  parameters: {
+    msw: {
+      handlers: [
+        http.post('/api/v1/admin/automations', async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>
+          await new Promise<void>((resolve) => {
+            completePendingSave = resolve
+          })
+          return HttpResponse.json(
+            {
+              ...rule,
+              ...body,
+              currentVersion: 1,
+              activeVersion: null,
+              aggregateVersion: 1,
+            },
+            { status: 201 },
+          )
+        }),
+        ...common,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByText(rule.name)
+    await userEvent.click(canvas.getByRole('button', { name: '자동화 만들기' }))
+    await userEvent.click(canvas.getByRole('textbox', { name: '자동화 이름' }))
+    await userEvent.paste('요청 완료 대기')
+    await userEvent.click(canvas.getByRole('button', { name: '초안 저장' }))
+    await waitFor(() => expect(completePendingSave).toBeDefined())
+    await expect(
+      canvas.getByRole('textbox', { name: '자동화 이름' }),
+    ).toBeDisabled()
+    await userEvent.keyboard('{Escape}')
+    await expect(
+      canvas.getByRole('dialog', { name: '자동화 만들기' }),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByRole('dialog', { name: '저장하지 않은 자동화 변경' }),
+    ).not.toBeInTheDocument()
+    completePendingSave?.()
+    await canvas.findByText('새 버전을 저장했습니다. 활성 버전은 유지됩니다.')
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('textbox', { name: '자동화 이름' }),
+      ).toBeEnabled(),
+    )
+    await userEvent.keyboard('{Escape}')
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
   },
 }
