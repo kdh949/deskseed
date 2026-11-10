@@ -35,6 +35,7 @@ New request complementary action
 
 - initial: one inquiry-number input and empty guidance
 - validation: invalid positive-integer input is identified in place
+- display-number input: trim surrounding whitespace and normalize `1288`, `DS-1288`, or `#DS-1288` to the same positive safe integer; number formatting never grants access
 - missing proof: require the original email link without rendering a capability-token input
 - success: navigate to the existing anonymous detail route only when the browser already holds that ticket-scoped sessionStorage proof
 - session loading/error and route denied content use canonical shell feedback states where applicable
