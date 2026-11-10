@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 
 const staff = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -151,6 +152,97 @@ function expectMutationHeaders(headers: Record<string, string>) {
   expect(headers['x-deskseed-expected-staff-id']).toBe(staff.id)
 }
 
+for (const width of [1280, 1440, 1920]) {
+  test(`transfer reconciles ownership before a field-only save at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 })
+    const commands: Command[] = []
+    const transferred = {
+      ...createDetail(),
+      ticket: {
+        ...createDetail().ticket,
+        version: 4,
+        group: { id: 'group-shipping', name: '배송 지원' },
+        assignee: { id: 'staff-3002', displayName: '상담사 B' },
+      },
+    }
+    const api = await mockWritableTicket(page, async ({ command, route }) => {
+      commands.push(command)
+      api.updateDetail({
+        ...transferred,
+        ticket: { ...transferred.ticket, version: 5, priority: 'URGENT' },
+      })
+      await route.fulfill({
+        json: { ticketNumber: 3001, version: 5, auditId, warnings: [] },
+      })
+    })
+    await page.route('**/api/v1/agent/tickets/3001/transfer', async (route) => {
+      expectMutationHeaders(route.request().headers())
+      expect(route.request().postDataJSON()).toMatchObject({
+        expectedVersion: 3,
+        groupId: 'group-shipping',
+        assigneeId: 'staff-3002',
+      })
+      api.updateDetail(transferred)
+      await route.fulfill({
+        json: { ticketNumber: 3001, version: 4, auditId, warnings: [] },
+      })
+    })
+    await openWorkspace(page)
+    const contextButton = page.getByRole('button', {
+      name: '티켓 컨텍스트 열기',
+    })
+    if (await contextButton.isVisible()) await contextButton.click()
+    await page.getByRole('button', { name: '티켓 이관', exact: true }).click()
+    const drawer = page.getByRole('dialog', { name: '티켓 이관' })
+    await drawer.getByLabel('대상 그룹').selectOption('group-shipping')
+    await drawer.getByLabel('대상 담당자').selectOption('staff-3002')
+    await drawer
+      .getByLabel('이관 사유')
+      .fill('배송 상담사가 이어서 처리합니다.')
+    await drawer.getByRole('button', { name: '이관 실행', exact: true }).click()
+    await expect(drawer).toHaveCount(0)
+    const context = page.getByRole('dialog', { name: '티켓 컨텍스트' })
+    if (await context.isVisible()) await page.keyboard.press('Escape')
+    await expect(page.getByRole('combobox', { name: '담당자' })).toContainText(
+      '상담사 B',
+    )
+    await expect(page.getByRole('combobox', { name: '그룹' })).toContainText(
+      '배송 지원',
+    )
+    await selectChoice(page, '우선순위', '긴급')
+    await expect(
+      page.getByRole('listbox', {
+        name: '우선순위 선택지',
+        includeHidden: true,
+      }),
+    ).toBeHidden()
+    const save = page.getByRole('button', {
+      name: '변경사항 저장',
+      exact: true,
+    })
+    await expect(save).toBeEnabled()
+    await page.screenshot({
+      path: testInfo.outputPath(`transferred-field-save-${width}.png`),
+      fullPage: true,
+    })
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await save.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByText('변경사항을 저장했습니다.')).toBeVisible()
+    expect(commands).toHaveLength(1)
+    expect(commands[0]).toMatchObject({
+      expectedVersion: 4,
+      changedFields: ['priority'],
+      priority: 'URGENT',
+      comment: null,
+    })
+    expect(commands[0]).not.toHaveProperty('assigneeId')
+    expect(commands[0]).not.toHaveProperty('groupId')
+  })
+}
+
 test('agent PUBLIC reply sends one expected-version command and refreshes the ticket', async ({
   page,
 }) => {
@@ -196,7 +288,9 @@ test('agent PUBLIC reply sends one expected-version command and refreshes the ti
   await page
     .getByRole('textbox', { name: '공개 답변 내용' })
     .fill('결제 승인 상태를 확인해 보겠습니다.')
-  await page.getByRole('button', { name: '답변 보내기', exact: true }).click()
+  await page
+    .getByRole('button', { name: '답변과 변경사항 저장', exact: true })
+    .click()
 
   await expect(
     page.getByText('공개 답변과 변경사항을 저장했습니다.'),
@@ -308,7 +402,9 @@ test('agent field update uses only the assignment options returned by the ticket
   await page
     .getByRole('textbox', { name: '공개 답변 내용' })
     .fill('담당 그룹을 변경했습니다.')
-  await page.getByRole('button', { name: '답변 보내기', exact: true }).click()
+  await page
+    .getByRole('button', { name: '답변과 변경사항 저장', exact: true })
+    .click()
   await expect(
     page.getByText('공개 답변과 변경사항을 저장했습니다.'),
   ).toBeVisible()
@@ -412,7 +508,9 @@ test('a 409 conflict preserves the draft and requires a field-by-field decision'
   await page
     .getByRole('textbox', { name: '공개 답변 내용' })
     .fill('초안을 보존해야 합니다.')
-  await page.getByRole('button', { name: '답변 보내기', exact: true }).click()
+  await page
+    .getByRole('button', { name: '답변과 변경사항 저장', exact: true })
+    .click()
 
   await expect(page.getByRole('alert', { name: '저장 충돌' })).toBeVisible()
   await expect(

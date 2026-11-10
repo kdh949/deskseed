@@ -53,6 +53,7 @@ export function useTicketDraftSync({
 }) {
   const [state, setState] = useState<TicketDraftSyncState>('loading')
   const hydrated = useRef(false)
+  const hydration = useRef<Promise<void> | null>(null)
   const versions = useRef<Record<TicketVisibility, number | null>>({
     PUBLIC: null,
     INTERNAL: null,
@@ -80,6 +81,7 @@ export function useTicketDraftSync({
   const timerRef = useRef<number | null>(null)
   const inFlightRef = useRef<Promise<void> | null>(null)
   const queuedRef = useRef(false)
+  const submittedChannels = useRef(new Set<TicketVisibility>())
   draftsRef.current = drafts
   baseVersionRef.current = baseTicketVersion
 
@@ -134,6 +136,7 @@ export function useTicketDraftSync({
                 }
               }
             }
+            if (submittedChannels.current.has(visibility)) return
             const newest = newestRecoverableDraft(local, remote)
             const current = draftsRef.current[visibility]
             const editorAlreadyContainsDraft =
@@ -179,7 +182,7 @@ export function useTicketDraftSync({
         hadLocalFailure ? 'local-only' : needsServerSync ? 'loading' : 'synced',
       )
     }
-    void recover()
+    hydration.current = recover()
     return () => {
       active = false
       hydrated.current = false
@@ -207,6 +210,7 @@ export function useTicketDraftSync({
       await Promise.all(
         (Object.keys(CHANNELS) as TicketVisibility[]).map(
           async (visibility) => {
+            if (submittedChannels.current.has(visibility)) return
             const channel = CHANNELS[visibility]
             const draft = drafts[visibility]
             if (draft.body.trim() === '' && draft.attachmentIds.length === 0) {
@@ -291,6 +295,74 @@ export function useTicketDraftSync({
 
   return {
     state,
+    resumeChannel: (visibility: TicketVisibility) => {
+      if (submittedChannels.current.delete(visibility))
+        lastSynchronized.current = null
+    },
+    clearSubmitted: async (visibility: TicketVisibility) => {
+      // A confirmed ticket write must finish channel cleanup before a detail
+      // refresh can unmount the editor. Never wait for the autosave debounce.
+      submittedChannels.current.add(visibility)
+      const knownRecovery = hydrated.current
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+      const previous = inFlightRef.current
+      const cleanup = async () => {
+        await hydration.current
+        await previous
+        const channel = CHANNELS[visibility]
+        let localFailed = false
+        try {
+          await removeLocalTicketDraft(staffId, ticketNumber, channel)
+        } catch {
+          localFailed = true
+        }
+        const version = versions.current[visibility]
+        if (!knownRecovery && version !== null) {
+          setState('conflict')
+          failureCallback.current(
+            '티켓 저장은 완료됐습니다. 저장 전에 확인하지 못한 서버 복구 초안은 삭제하지 않았습니다. 복구 내용과 대화를 확인해 주세요.',
+          )
+          return
+        }
+        if (version !== null) {
+          try {
+            await clearAgentTicketDraft(ticketNumber, channel, version)
+            versions.current[visibility] = null
+          } catch (cause) {
+            if (cause instanceof ApiError && cause.status === 404) {
+              versions.current[visibility] = null
+            } else {
+              const conflict = cause instanceof ApiError && cause.status === 409
+              setState(conflict ? 'conflict' : 'local-only')
+              failureCallback.current(
+                conflict
+                  ? '티켓 저장은 완료됐습니다. 다른 브라우저의 새 복구 초안은 삭제하지 않았습니다. 이미 저장한 답변을 다시 제출하지 마세요.'
+                  : '티켓 저장은 완료됐지만 서버 복구 초안을 정리하지 못했습니다. 다시 로그인하면 복구 내용과 대화를 확인하고 이미 저장한 답변을 다시 제출하지 마세요.',
+                cause instanceof ApiError ? cause.requestId : undefined,
+              )
+              return
+            }
+          }
+        }
+        if (localFailed) {
+          setState('error')
+          failureCallback.current(
+            '티켓 저장은 완료됐지만 이 브라우저의 복구 초안을 정리하지 못했습니다. 복구 시 이미 저장한 답변을 다시 제출하지 마세요.',
+          )
+        }
+      }
+      const flight = cleanup().finally(() => {
+        if (inFlightRef.current === flight) {
+          inFlightRef.current = null
+          if (queuedRef.current) void requestSynchronization()
+        }
+      })
+      inFlightRef.current = flight
+      await flight
+    },
     flush: () => {
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current)
