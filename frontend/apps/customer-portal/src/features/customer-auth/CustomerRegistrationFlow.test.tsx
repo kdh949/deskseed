@@ -57,6 +57,48 @@ async function fillRegistration() {
   return user
 }
 
+it.each(['empty', 'unavailable'])(
+  'lets customers retry %s registration policies and return home',
+  async (state) => {
+    const user = userEvent.setup()
+    let calls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        calls++
+        if (calls === 1)
+          return state === 'empty'
+            ? Response.json({ policies: [] })
+            : new Response(null, { status: 503 })
+        return Response.json({ policies })
+      }),
+    )
+    registration()
+    expect(
+      await screen.findByText(
+        state === 'empty'
+          ? '가입 약관을 준비하고 있습니다.'
+          : '가입 약관을 불러올 수 없습니다.',
+      ),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: '고객 지원 홈으로' }),
+    ).toHaveAttribute('href', '/')
+    expect(
+      screen.queryByRole('button', { name: '계정 만들기' }),
+    ).not.toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', {
+        name: state === 'empty' ? '약관 다시 확인' : /다시/,
+      }),
+    )
+    expect(
+      await screen.findByRole('checkbox', { name: /필수 약관/ }),
+    ).not.toBeChecked()
+    expect(calls).toBe(2)
+  },
+)
+
 it.each([true, false])(
   'recovers from registration 400 and resets consent only if policies changed: %s',
   async (changed) => {

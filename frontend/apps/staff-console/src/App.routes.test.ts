@@ -26,6 +26,7 @@ describe('staff production route inventory', () => {
         '/agent/views/:viewKey',
         '/agent/tickets/:ticketNumber',
         '/admin/operations/mail',
+        '/admin/customer-consent-policies',
       ]),
     )
     expect(routePaths(appRoutes)).not.toEqual(

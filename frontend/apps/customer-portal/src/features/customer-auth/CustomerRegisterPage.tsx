@@ -36,6 +36,7 @@ export function CustomerRegisterPage({
   const policies = useQuery({
     queryKey: ['customer', 'consent', 'registration'],
     queryFn: listRegistrationConsentPolicies,
+    retry: false,
   })
   const [form, setForm] = useState({
     displayName: customer?.displayName ?? '',
@@ -60,16 +61,33 @@ export function CustomerRegisterPage({
           kind="error"
           title="가입 약관을 불러올 수 없습니다."
         />
+        <p>
+          <Link to="/">고객 지원 홈으로</Link>
+        </p>
       </div>
     )
   if (!policies.data.length)
     return (
       <div className="customer-page">
         <ScreenState
+          action={
+            <DsButton
+              disabled={policies.isFetching}
+              onClick={() => void policies.refetch()}
+            >
+              약관 다시 확인
+            </DsButton>
+          }
           kind="empty"
           title="가입 약관을 준비하고 있습니다."
-          description="잠시 후 다시 방문해 주세요."
+          description="현재 회원가입을 시작할 수 없습니다. 기존 계정으로 로그인하거나 고객 지원 홈을 이용해 주세요."
         />
+        <p>
+          <Link to="/customer/sign-in">로그인으로 돌아가기</Link>
+        </p>
+        <p>
+          <Link to="/">고객 지원 홈으로</Link>
+        </p>
       </div>
     )
   const requiredAccepted = policies.data
