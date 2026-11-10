@@ -108,18 +108,28 @@ export function SeedMacroMenu({
   state,
   onSelect,
   onRetry,
+  onManage,
 }: {
   items: Array<{ id: string; label: string; description?: string }>
   state: SeedAsyncState
   onSelect: (id: string) => void
   onRetry?: () => void
+  /** Opens personal macro management through the host router and its draft guards. */
+  onManage?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (open)
-      panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    if (!open) return
+    panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setOpen(false)
+      buttonRef.current?.focus()
+    }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
   }, [open])
   return (
     <div className="seed-macro-menu">
@@ -166,6 +176,7 @@ export function SeedMacroMenu({
               compact
               kind="empty"
               title="사용 가능한 매크로가 없습니다"
+              description="내 매크로를 만들고 활성화한 뒤 목록을 새로고침하세요."
             />
           )}
           {state === 'denied' && (
@@ -188,6 +199,23 @@ export function SeedMacroMenu({
               kind="error"
               title="매크로를 불러오지 못했습니다"
             />
+          )}
+          {(state === 'idle' || state === 'empty') && onRetry && (
+            <button type="button" role="menuitem" onClick={onRetry}>
+              목록 새로고침
+            </button>
+          )}
+          {(state === 'idle' || state === 'empty') && onManage && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                onManage()
+              }}
+            >
+              내 매크로 관리
+            </button>
           )}
           {(state === 'idle' || state === 'empty') &&
             items.map((item) => (

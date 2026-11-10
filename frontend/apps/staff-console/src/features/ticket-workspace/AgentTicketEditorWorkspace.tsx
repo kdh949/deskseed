@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import type {
   AgentComment,
   AgentTicketDetail,
@@ -669,6 +669,7 @@ function Composer({
   editor: ReturnType<typeof useTicketEditor>
   extensionAccess?: ExtensionAccess
 }) {
+  const navigate = useNavigate()
   const mode = detail.ticket.isChild ? 'INTERNAL' : editor.mode
   const modes: TicketVisibility[] = detail.ticket.isChild
     ? ['INTERNAL']
@@ -782,6 +783,7 @@ function Composer({
               <>
                 <SeedMacroMenu
                   items={macro.items}
+                  onManage={() => navigate('/agent/personal-macros')}
                   onRetry={macro.load}
                   onSelect={macro.preview}
                   state={macro.state}

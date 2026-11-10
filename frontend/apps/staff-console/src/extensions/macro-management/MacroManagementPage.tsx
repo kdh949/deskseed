@@ -1,9 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useBeforeUnload, useBlocker } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../../api/client'
 import type { AgentMacroDefinition } from '../../api/types'
 import {
   SeedButton,
+  SeedDrawer,
   SeedFeedbackState,
   SeedNotice,
   SeedSelectField,
@@ -54,6 +56,33 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
     retry: false,
   })
   const [draft, setDraft] = useState(editableDraft())
+  const editorRef = useRef<HTMLFormElement>(null)
+  const createRef = useRef<HTMLButtonElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const wasEditing = useRef(false)
+  const [confirmClose, setConfirmClose] = useState(false)
+  const dirty =
+    editing !== null &&
+    JSON.stringify(draft) !==
+      JSON.stringify(editableDraft(editing === 'new' ? undefined : editing))
+  const blocker = useBlocker(dirty)
+  useBeforeUnload(
+    useCallback(
+      (event: BeforeUnloadEvent) => {
+        if (!dirty) return
+        event.preventDefault()
+        event.returnValue = ''
+      },
+      [dirty],
+    ),
+  )
+  const editingId = editing === 'new' ? 'new' : editing?.id
+  useEffect(() => {
+    if (editingId)
+      editorRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+    else if (wasEditing.current) createRef.current?.focus()
+    wasEditing.current = Boolean(editingId)
+  }, [editingId])
   const [conflicts, setConflicts] = useState<EditableMacroField[]>([])
   const customStatusConflict =
     conflicts.includes('status') &&
@@ -86,6 +115,7 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
   const begin = (macro: AgentMacroDefinition | 'new') => {
     if (busy || macros.isFetching) return
     setEditing(macro)
+    setHistoryFor(null)
     setConflicts([])
     setDraft(editableDraft(macro === 'new' ? undefined : macro))
     setError(null)
@@ -154,12 +184,15 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
         </p>
       </header>
       <div className="macro-actions">
-        <SeedButton
-          disabled={busy || macros.isFetching || !macros.data}
-          onClick={() => begin('new')}
-        >
-          매크로 만들기
-        </SeedButton>
+        {!editing && (
+          <SeedButton
+            ref={createRef}
+            disabled={busy || macros.isFetching || !macros.data}
+            onClick={() => begin('new')}
+          >
+            매크로 만들기
+          </SeedButton>
+        )}
         <SeedButton
           disabled={busy || macros.isFetching}
           onClick={() => void refresh()}
@@ -184,62 +217,74 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
         </SeedNotice>
       )}
       {success && <p role="status">{success}</p>}
-      {macros.isPending ? (
-        <SeedSkeletonRows />
-      ) : (
-        <ul className="macro-list">
-          {macros.data?.map((macro) => (
-            <li key={macro.id}>
-              <div>
-                <strong>{macro.name}</strong>
-                <p>
-                  최신 버전 {macro.currentVersion} ·{' '}
-                  {macro.activeVersion
-                    ? `활성 버전 ${macro.activeVersion}`
-                    : '비활성'}
-                </p>
-              </div>
-              <div className="macro-actions">
-                <SeedButton
-                  disabled={busy || macros.isFetching}
-                  onClick={() => begin(macro)}
-                >
-                  편집: {macro.name}
-                </SeedButton>
-                <SeedButton
-                  disabled={
-                    busy ||
-                    refreshRequired ||
-                    macro.activeVersion === macro.currentVersion
-                  }
-                  onClick={() =>
-                    void mutate(() => activateMacro(scope, macro, true), false)
-                  }
-                >
-                  최신 버전 활성화: {macro.name}
-                </SeedButton>
-                {macro.activeVersion && (
+      {!editing &&
+        (macros.isPending ? (
+          <SeedSkeletonRows />
+        ) : (
+          <ul className="macro-list">
+            {macros.data?.map((macro) => (
+              <li key={macro.id}>
+                <div>
+                  <strong>{macro.name}</strong>
+                  <p>
+                    최신 버전 {macro.currentVersion} ·{' '}
+                    {macro.activeVersion
+                      ? `활성 버전 ${macro.activeVersion}`
+                      : '비활성'}
+                  </p>
+                </div>
+                <div className="macro-actions">
                   <SeedButton
-                    disabled={busy || refreshRequired}
+                    disabled={busy || macros.isFetching}
+                    onClick={() => begin(macro)}
+                  >
+                    <span aria-hidden="true">편집</span>
+                    <span className="macro-sr-only">편집: {macro.name}</span>
+                  </SeedButton>
+                  <SeedButton
+                    disabled={
+                      busy ||
+                      refreshRequired ||
+                      macro.activeVersion === macro.currentVersion
+                    }
                     onClick={() =>
                       void mutate(
-                        () => activateMacro(scope, macro, false),
+                        () => activateMacro(scope, macro, true),
                         false,
                       )
                     }
                   >
-                    비활성화: {macro.name}
+                    <span aria-hidden="true">최신 버전 활성화</span>
+                    <span className="macro-sr-only">
+                      최신 버전 활성화: {macro.name}
+                    </span>
                   </SeedButton>
-                )}
-                <SeedButton onClick={() => setHistoryFor(macro)}>
-                  이력: {macro.name}
-                </SeedButton>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {macros.data?.length === 0 && (
+                  {macro.activeVersion && (
+                    <SeedButton
+                      disabled={busy || refreshRequired}
+                      onClick={() =>
+                        void mutate(
+                          () => activateMacro(scope, macro, false),
+                          false,
+                        )
+                      }
+                    >
+                      <span aria-hidden="true">비활성화</span>
+                      <span className="macro-sr-only">
+                        비활성화: {macro.name}
+                      </span>
+                    </SeedButton>
+                  )}
+                  <SeedButton onClick={() => setHistoryFor(macro)}>
+                    <span aria-hidden="true">이력</span>
+                    <span className="macro-sr-only">이력: {macro.name}</span>
+                  </SeedButton>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ))}
+      {!editing && macros.data?.length === 0 && (
         <SeedFeedbackState
           kind="empty"
           title="등록된 매크로가 없습니다."
@@ -249,12 +294,42 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
       {editing && (
         <form
           className="macro-editor"
+          ref={editorRef}
           aria-label="매크로 편집"
           onSubmit={submit}
         >
           <h2>
             {editing === 'new' ? '매크로 만들기' : `${editing.name} 새 버전`}
           </h2>
+          <div className="macro-actions macro-editor-actions">
+            <SeedButton
+              type="submit"
+              variant="primary"
+              disabled={
+                busy ||
+                macros.isFetching ||
+                refreshRequired ||
+                conflicts.length > 0 ||
+                !draft.name.trim() ||
+                !toMacroDraft(draft).actions.length
+              }
+            >
+              {editing === 'new' ? '매크로 저장' : '새 버전 저장'}
+            </SeedButton>
+            <SeedButton
+              ref={closeRef}
+              disabled={busy || macros.isFetching}
+              onClick={() => {
+                if (dirty) setConfirmClose(true)
+                else {
+                  setEditing(null)
+                  setConflicts([])
+                }
+              }}
+            >
+              편집 닫기
+            </SeedButton>
+          </div>
           {conflicts.length > 0 && editing !== 'new' && (
             <SeedNotice
               title="같은 항목에 다른 변경이 있습니다."
@@ -373,31 +448,41 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
                 {draft.template || '답변을 추가하지 않습니다.'}
               </p>
             </section>
-            <div className="macro-actions">
-              <SeedButton
-                type="submit"
-                variant="primary"
-                disabled={
-                  refreshRequired ||
-                  conflicts.length > 0 ||
-                  !draft.name.trim() ||
-                  !toMacroDraft(draft).actions.length
-                }
-              >
-                {editing === 'new' ? '매크로 저장' : '새 버전 저장'}
-              </SeedButton>
-              <SeedButton
-                onClick={() => {
-                  setEditing(null)
-                  setConflicts([])
-                }}
-              >
-                편집 닫기
-              </SeedButton>
-            </div>
           </fieldset>
         </form>
       )}
+      <SeedDrawer
+        open={confirmClose || blocker.state === 'blocked'}
+        title="저장하지 않은 매크로 변경"
+        description="편집을 계속하거나 변경을 버리고 이동할 수 있습니다."
+        returnFocusRef={closeRef}
+        onClose={() => {
+          setConfirmClose(false)
+          if (blocker.state === 'blocked') blocker.reset()
+        }}
+      >
+        <div className="macro-actions">
+          <SeedButton
+            onClick={() => {
+              setConfirmClose(false)
+              if (blocker.state === 'blocked') blocker.reset()
+            }}
+          >
+            계속 편집
+          </SeedButton>
+          <SeedButton
+            disabled={busy || macros.isFetching}
+            onClick={() => {
+              setConfirmClose(false)
+              setEditing(null)
+              setConflicts([])
+              if (blocker.state === 'blocked') blocker.proceed()
+            }}
+          >
+            변경 버리기
+          </SeedButton>
+        </div>
+      </SeedDrawer>
       {historyFor && (
         <section className="macro-editor" aria-label="매크로 이력">
           <h2>{historyFor.name} 이력</h2>

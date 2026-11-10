@@ -134,7 +134,15 @@ function ControlCatalog() {
 const meta = {
   title: '03 Components/Seed Workspace Controls',
   component: ControlCatalog,
-  parameters: { layout: 'padded' },
+  parameters: {
+    layout: 'padded',
+    docs: {
+      description: {
+        component:
+          'SeedMacroMenu: items(id, label, description), state(idle/loading/empty/error/denied), onSelect(id), optional onRetry() and onManage(). onRetry exposes refresh in idle/empty and retry in error. onManage opens the host personal-macro route in idle/empty; the host owns navigation and unsaved-draft protection. Neither action appears while loading or denied. Escape closes the menu and restores its trigger focus.',
+      },
+    },
+  },
   tags: ['autodocs'],
 } satisfies Meta<typeof ControlCatalog>
 
@@ -227,4 +235,43 @@ export const NotificationStates: Story = {
       )}
     </div>
   ),
+}
+
+const refreshMacros = fn()
+const manageMacros = fn()
+export const EmptyMacroRecovery: Story = {
+  render: () => (
+    <div style={{ paddingTop: 360 }}>
+      <SeedMacroMenu
+        items={[]}
+        state="empty"
+        onSelect={fn()}
+        onRetry={refreshMacros}
+        onManage={manageMacros}
+      />
+    </div>
+  ),
+  beforeEach: () => {
+    refreshMacros.mockClear()
+    manageMacros.mockClear()
+  },
+  play: async ({ canvas }) => {
+    const trigger = canvas.getByRole('button', { name: '매크로 라이브러리' })
+    await userEvent.click(trigger)
+    await expect(
+      canvas.getByText('내 매크로를 만들고 활성화한 뒤 목록을 새로고침하세요.'),
+    ).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('menuitem', { name: '목록 새로고침' }),
+    )
+    await expect(refreshMacros).toHaveBeenCalledOnce()
+    await userEvent.keyboard('{Escape}')
+    await expect(trigger).toHaveFocus()
+    await userEvent.click(trigger)
+    await userEvent.click(
+      canvas.getByRole('menuitem', { name: '내 매크로 관리' }),
+    )
+    await expect(manageMacros).toHaveBeenCalledOnce()
+    await expect(canvas.queryByRole('menu')).not.toBeInTheDocument()
+  },
 }
